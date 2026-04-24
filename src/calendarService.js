@@ -30,40 +30,57 @@ async function getCalendar() {
  * @returns {Array} events [{ start, end }] (分換算)
  */
 async function getCalendarEventsForDate(dateStr) {
-  if (!config.CALENDAR_ID) return [];
+  if (!config.CALENDAR_ID) {
+    console.log('⚠️ GOOGLE_CALENDAR_ID が設定されていません。カレンダーチェックをスキップします。');
+    return [];
+  }
   
-  const calendar = await getCalendar();
-  const timeMin = new Date(`${dateStr}T00:00:00+09:00`).toISOString();
-  const timeMax = new Date(`${dateStr}T23:59:59+09:00`).toISOString();
+  console.log(`🔍 カレンダー確認開始: ${dateStr} (ID: ${config.CALENDAR_ID})`);
+  
+  try {
+    const calendar = await getCalendar();
+    const timeMin = new Date(`${dateStr}T00:00:00+09:00`).toISOString();
+    const timeMax = new Date(`${dateStr}T23:59:59+09:00`).toISOString();
 
-  const res = await calendar.events.list({
-    calendarId: config.CALENDAR_ID,
-    timeMin,
-    timeMax,
-    singleEvents: true,
-    orderBy: 'startTime',
-    timeZone: 'Asia/Tokyo',
-  });
+    const res = await calendar.events.list({
+      calendarId: config.CALENDAR_ID,
+      timeMin,
+      timeMax,
+      singleEvents: true,
+      orderBy: 'startTime',
+      timeZone: 'Asia/Tokyo',
+    });
 
-  const events = res.data.items || [];
-  return events.map(event => {
-    const start = event.start.dateTime || event.start.date;
-    const end   = event.end.dateTime   || event.end.date;
-    
-    // YYYY-MM-DD 形式（終日予定）の場合は一日中
-    if (start.length === 10) {
-      return { start: 0, end: 24 * 60 };
+    const events = res.data.items || [];
+    console.log(`✅ カレンダーから ${events.length} 件の予定を取得しました。`);
+
+    return events.map(event => {
+      const start = event.start.dateTime || event.start.date;
+      const end   = event.end.dateTime   || event.end.date;
+      
+      let startMin, endMin;
+      if (start.length === 10) {
+        startMin = 0;
+        endMin = 24 * 60;
+      } else {
+        const startDate = new Date(start);
+        const endDate   = new Date(end);
+        startMin = startDate.getHours() * 60 + startDate.getMinutes();
+        endMin   = endDate.getHours()   * 60 + endDate.getMinutes();
+      }
+      
+      console.log(`   - 予定: ${event.summary} (${startMin}分〜${endMin}分)`);
+      return { start: startMin, end: endMin, summary: event.summary };
+    });
+  } catch (err) {
+    console.error('❌ カレンダー取得エラー:', err.message);
+    if (err.message.includes('Not Found')) {
+      console.error('   -> カレンダーIDが間違っている可能性があります。');
+    } else if (err.message.includes('accessNotConfigured')) {
+      console.error('   -> Google Calendar APIが有効になっていない可能性があります。');
     }
-
-    const startDate = new Date(start);
-    const endDate   = new Date(end);
-    
-    return {
-      start: startDate.getHours() * 60 + startDate.getMinutes(),
-      end:   endDate.getHours()   * 60 + endDate.getMinutes(),
-      summary: event.summary
-    };
-  });
+    return [];
+  }
 }
 
 /**
