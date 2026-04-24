@@ -2,6 +2,7 @@
 const { google } = require('googleapis');
 const config = require('./config');
 const { timeToMinutes, minutesToTime } = require('./utils');
+const { getCalendarEventsForDate, addEventToCalendar } = require('./calendarService');
 
 let _sheets = null;
 
@@ -69,6 +70,7 @@ async function getAvailableSlots(dateStr, duration) {
   const { BUSINESS_START, BUSINESS_END, SLOT_INTERVAL } = config;
 
   const reservations = await getReservationsForDate(dateStr);
+  const calEvents    = await getCalendarEventsForDate(dateStr);
 
   // 当日の場合は「現在時刻 + 1時間」以降のスロットのみ表示
   const now = new Date();
@@ -95,6 +97,16 @@ async function getAvailableSlots(dateStr, duration) {
       if (t < resEnd && slotEnd > resStart) {
         isAvailable = false;
         break;
+      }
+    }
+
+    // Googleカレンダーとの重複チェック
+    if (isAvailable) {
+      for (const event of calEvents) {
+        if (t < event.end && slotEnd > event.start) {
+          isAvailable = false;
+          break;
+        }
       }
     }
 
@@ -138,6 +150,14 @@ async function saveBooking({ date, time, menu, duration, name, userId }) {
   });
 
   console.log(`📝 予約保存: ${date} ${time}〜${endTime} ${menuName} ${name}様`);
+
+  // Googleカレンダーに追加
+  try {
+    await addEventToCalendar({ date, time, endTime, menuName, name });
+  } catch (err) {
+    console.error('⚠️ Googleカレンダーへの追加に失敗しました (予約は完了しています):', err.message);
+  }
+
   return endTime;
 }
 

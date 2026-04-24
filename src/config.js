@@ -21,9 +21,10 @@ module.exports = {
   BUSINESS_END:   23 * 60,   // 23:00 (閉店時刻 = 施術終了の上限)
   SLOT_INTERVAL:  30,         // 30分刻み
 
-  // ─── Google Sheets ────────────────────────────────────────
+  // ─── Google Sheets & Calendar ─────────────────────────────
   SPREADSHEET_ID: process.env.GOOGLE_SPREADSHEET_ID,
   SHEET_NAME: '予約一覧',
+  CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID,
 
   // ─── オーナー情報 ─────────────────────────────────────────
   OWNER_LINE_USER_ID: process.env.OWNER_LINE_USER_ID,
