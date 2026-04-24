@@ -47,8 +47,8 @@ async function getCalendarEvents(dateStr) {
   console.log(`🔍 カレンダー確認中: ${dateStr}`);
   try {
     const calendar = await getCalendar();
-    const timeMin = new Date(`${dateStr}T00:00:00+09:00`).toISOString();
-    const timeMax = new Date(`${dateStr}T23:59:59+09:00`).toISOString();
+    const timeMin = `${dateStr}T00:00:00+09:00`;
+    const timeMax = `${dateStr}T23:59:59+09:00`;
 
     const res = await calendar.events.list({
       calendarId: config.CALENDAR_ID,
@@ -61,10 +61,42 @@ async function getCalendarEvents(dateStr) {
 
     const events = res.data.items || [];
     console.log(`✅ カレンダーから ${events.length} 件取得しました。`);
-    return events.map(e => ({
-      start: e.start.dateTime ? (new Date(e.start.dateTime).getHours() * 60 + new Date(e.start.dateTime).getMinutes()) : 0,
-      end:   e.end.dateTime   ? (new Date(e.end.dateTime).getHours()   * 60 + new Date(e.end.dateTime).getMinutes())   : 1440,
-    }));
+
+    return events.map(e => {
+      let start, end;
+
+      if (e.start.dateTime) {
+        // 時刻指定の予定: サーバーのTZに依存しないようJST文字列からパース
+        const startDate = new Date(e.start.dateTime);
+        const endDate   = new Date(e.end.dateTime);
+        
+        // JST基準での時間を取得 (intl を使用して確実に時・分を取り出す)
+        const getJSTTime = (date) => {
+          const parts = new Intl.DateTimeFormat('ja-JP', {
+            timeZone: 'Asia/Tokyo',
+            hour: 'numeric',
+            minute: 'numeric',
+            hour12: false
+          }).formatToParts(date);
+          let h = 0, m = 0;
+          for (const part of parts) {
+            if (part.type === 'hour') h = parseInt(part.value);
+            if (part.type === 'minute') m = parseInt(part.value);
+          }
+          return h * 60 + m;
+        };
+
+        start = getJSTTime(startDate);
+        end   = getJSTTime(endDate);
+      } else {
+        // 終日予定
+        start = 0;
+        end   = 1440;
+      }
+      
+      console.log(`   - 予定: ${e.summary} (${start}分 〜 ${end}分)`);
+      return { start, end };
+    });
   } catch (err) {
     console.error('❌ カレンダー取得失敗:', err.message);
     return [];
@@ -110,8 +142,25 @@ async function getAvailableSlots(dateStr, duration) {
   const calEvents    = await getCalendarEvents(dateStr);
 
   const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  const nowMinutes = (dateStr === todayStr) ? (now.getHours() * 60 + now.getMinutes() + 60) : 0;
+  
+  // JST基準での現在時刻・日付を取得
+  const jstParts = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: 'numeric', minute: 'numeric', hour12: false
+  }).formatToParts(now);
+
+  let y, m, d, hh, mm;
+  for (const p of jstParts) {
+    if (p.type === 'year') y = p.value;
+    if (p.type === 'month') m = p.value;
+    if (p.type === 'day') d = p.value;
+    if (p.type === 'hour') hh = parseInt(p.value);
+    if (p.type === 'minute') mm = parseInt(p.value);
+  }
+  
+  const todayStr = `${y}-${m}-${d}`;
+  const nowMinutes = (dateStr === todayStr) ? (hh * 60 + mm + 60) : 0;
 
   const lastStart = BUSINESS_END - duration;
   const available = [];
