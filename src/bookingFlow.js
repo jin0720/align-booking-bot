@@ -1,0 +1,392 @@
+// src/bookingFlow.js
+// 予約フローの状態機械 (State Machine)
+// 各ユーザーの会話状態をメモリ上で管理する
+
+const config  = require('./config');
+const { getAvailableSlots, saveBooking } = require('./sheetsService');
+const {
+  timeToMinutes, minutesToTime,
+  formatDateJP, parseDate, parseTime, formatSlotsText,
+} = require('./utils');
+
+// ────────────────────────────────────────────────────────────────
+// セッション管理（ユーザーごとの会話状態）
+// ────────────────────────────────────────────────────────────────
+const sessions = new Map();
+
+function getSession(userId) {
+  if (!sessions.has(userId)) sessions.set(userId, { step: 'idle' });
+  return sessions.get(userId);
+}
+function setSession(userId, data) {
+  sessions.set(userId, { ...getSession(userId), ...data });
+}
+function clearSession(userId) {
+  sessions.set(userId, { step: 'idle' });
+}
+
+// ────────────────────────────────────────────────────────────────
+// キーワード定義
+// ────────────────────────────────────────────────────────────────
+const TRIGGER_KEYWORDS = ['予約', 'よやく', '空き', '予約したい', 'よやくしたい', 'reservation', 'book'];
+const CANCEL_KEYWORDS  = ['キャンセル', 'やめる', 'やめ', 'cancel', '最初から', 'やり直し'];
+
+function isTriggered(text) {
+  return TRIGGER_KEYWORDS.some(k => text.toLowerCase().includes(k));
+}
+function isCancelled(text) {
+  return CANCEL_KEYWORDS.some(k => text.toLowerCase().includes(k));
+}
+
+// ────────────────────────────────────────────────────────────────
+// メッセージビルダー
+// ────────────────────────────────────────────────────────────────
+
+/** ウェルカム + メニュー選択ボタン */
+function buildWelcomeMessages() {
+  return [
+    {
+      type: 'text',
+      text: '🌿 Alignへのご予約ありがとうございます！\n\n「キャンセル」と送るといつでも最初に戻れます。',
+    },
+    {
+      type: 'template',
+      altText: 'メニューを選択してください',
+      template: {
+        type: 'buttons',
+        title: '📋 メニュー選択',
+        text: 'ご希望のメニューをお選びください',
+        actions: [
+          { type: 'message', label: '💆 オイルマッサージ', text: 'メニュー:oil' },
+          { type: 'message', label: '🦴 整体',             text: 'メニュー:seitai' },
+        ],
+      },
+    },
+  ];
+}
+
+/** コース選択ボタン */
+function buildDurationMessage(menuName) {
+  return {
+    type: 'template',
+    altText: 'コースを選択してください',
+    template: {
+      type: 'buttons',
+      title: `⏱ コース選択 | ${menuName}`,
+      text: 'オープン記念 全コース ¥1,000OFF ✨',
+      actions: [
+        { type: 'message', label: '70分  ¥9,000',  text: '時間:70' },
+        { type: 'message', label: '100分 ¥12,000', text: '時間:100' },
+        { type: 'message', label: '130分 ¥15,000', text: '時間:130' },
+        { type: 'message', label: '160分 ¥18,000', text: '時間:160' },
+      ],
+    },
+  };
+}
+
+/** 日付選択 (クイックリプライ: 今日〜7日間) */
+function buildDateMessage() {
+  const items = [];
+  const now = new Date();
+  const days = ['日', '月', '火', '水', '木', '金', '土'];
+
+  // i=0 が今日、i=1〜6 が翌日以降 (計7日分)
+  for (let i = 0; i <= 6; i++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() + i);
+    const y  = d.getFullYear();
+    const m  = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${dd}`;
+    // 今日は「今日」ラベルを追加
+    const dayLabel = i === 0 ? '今日' : `${d.getMonth()+1}/${d.getDate()}(${days[d.getDay()]})`;
+    items.push({ type: 'action', action: { type: 'message', label: dayLabel, text: `日付:${dateStr}` } });
+  }
+
+  return {
+    type: 'text',
+    text: '📅 ご希望の日付を選択するか、直接入力してください\n（例：「今日」「5/15」）',
+    quickReply: { items },
+  };
+}
+
+/** 予約確認メッセージ */
+function buildConfirmMessage(session) {
+  const menuName = config.MENUS[session.menu];
+  const price    = config.PRICES[session.duration];
+  const dateJP   = formatDateJP(session.date);
+  const endTime  = minutesToTime(timeToMinutes(session.time) + parseInt(session.duration));
+
+  return {
+    type: 'template',
+    altText: '予約内容の確認',
+    template: {
+      type: 'confirm',
+      text: (
+        `【ご予約内容の確認】\n\n` +
+        `📋 ${menuName}\n` +
+        `⏱ ${session.duration}分コース\n` +
+        `💴 ¥${price.discounted.toLocaleString()} (¥1,000OFF)\n` +
+        `📅 ${dateJP}\n` +
+        `🕐 ${session.time}〜${endTime}\n` +
+        `👤 ${session.name} 様\n\n` +
+        `この内容でよろしいですか？`
+      ),
+      actions: [
+        { type: 'message', label: '✅ 予約する',  text: '確認:yes' },
+        { type: 'message', label: '❌ やり直す', text: '確認:no'  },
+      ],
+    },
+  };
+}
+
+/** 予約完了メッセージ */
+function buildCompleteMessage(session, endTime) {
+  const menuName = config.MENUS[session.menu];
+  const price    = config.PRICES[session.duration];
+  const dateJP   = formatDateJP(session.date);
+
+  return {
+    type: 'text',
+    text: (
+      `🎉 ご予約が完了しました！\n\n` +
+      `【予約内容】\n` +
+      `📋 ${menuName}\n` +
+      `⏱ ${session.duration}分コース\n` +
+      `💴 ¥${price.discounted.toLocaleString()}\n` +
+      `📅 ${dateJP}\n` +
+      `🕐 ${session.time}〜${endTime}\n` +
+      `👤 ${session.name} 様\n\n` +
+      `ご来店を心よりお待ちしております✨\n\n` +
+      `キャンセル・変更はこちらのLINEまでご連絡ください。`
+    ),
+  };
+}
+
+/** オーナー向け通知メッセージ */
+async function notifyOwner(client, session, endTime) {
+  const ownerId = config.OWNER_LINE_USER_ID;
+  if (!ownerId) return;
+
+  const menuName = config.MENUS[session.menu];
+  const price    = config.PRICES[session.duration];
+  const dateJP   = formatDateJP(session.date);
+
+  try {
+    await client.pushMessage({
+      to: ownerId,
+      messages: [{
+        type: 'text',
+        text: (
+          `🔔 新規予約が入りました！\n\n` +
+          `👤 ${session.name} 様\n` +
+          `📋 ${menuName}\n` +
+          `⏱ ${session.duration}分コース\n` +
+          `💴 ¥${price.discounted.toLocaleString()}\n` +
+          `📅 ${dateJP}\n` +
+          `🕐 ${session.time}〜${endTime}`
+        ),
+      }],
+    });
+    console.log(`🔔 オーナーへ通知送信完了`);
+  } catch (err) {
+    console.error('オーナー通知送信失敗:', err.message);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// メインフロー
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * ユーザーのメッセージを受け取り、返信メッセージの配列を返す
+ * @param {string} userId  LINE User ID
+ * @param {string} text    受信テキスト
+ * @param {object} client  LINE Messaging API クライアント
+ * @returns {Array|null}   送信するメッセージ配列 (null = 返信なし)
+ */
+async function handleBookingFlow(userId, text, client) {
+  const session = getSession(userId);
+
+  // ── IDチェック要求 (デバッグ用) ─────────────────────────────
+  if (text.includes('自分のID') || text.includes('userid') || text === 'ID') {
+    return [{ type: 'text', text: `あなたのLINE User IDは：\n${userId}` }];
+  }
+
+  // ── キャンセル処理 ───────────────────────────────────────────
+  if (session.step !== 'idle' && isCancelled(text)) {
+    clearSession(userId);
+    return [{
+      type: 'text',
+      text: '🔄 予約をリセットしました。\n\n「予約」と送ると最初からやり直せます。',
+    }];
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // STEP: idle → メニュー選択へ
+  // ════════════════════════════════════════════════════════════
+  if (session.step === 'idle') {
+    if (isTriggered(text)) {
+      setSession(userId, { step: 'menu_select' });
+      return buildWelcomeMessages();
+    }
+    return null; // 予約トリガーでない場合は無視
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // STEP: メニュー選択
+  // ════════════════════════════════════════════════════════════
+  if (session.step === 'menu_select') {
+    const match = text.match(/^メニュー:(oil|seitai)$/);
+    if (match) {
+      const menu = match[1];
+      setSession(userId, { step: 'duration_select', menu });
+      return [buildDurationMessage(config.MENUS[menu])];
+    }
+    return [{ type: 'text', text: 'ボタンからメニューをお選びください。' }];
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // STEP: コース（時間）選択
+  // ════════════════════════════════════════════════════════════
+  if (session.step === 'duration_select') {
+    const match = text.match(/^時間:(\d+)$/);
+    if (match) {
+      const duration = parseInt(match[1]);
+      if (config.PRICES[duration]) {
+        setSession(userId, { step: 'date_input', duration });
+        return [buildDateMessage()];
+      }
+    }
+    return [{ type: 'text', text: 'ボタンからコースをお選びください。' }];
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // STEP: 日付入力
+  // ════════════════════════════════════════════════════════════
+  if (session.step === 'date_input') {
+    let dateStr = null;
+
+    // クイックリプライからの入力: "日付:YYYY-MM-DD"
+    const qrMatch = text.match(/^日付:(\d{4}-\d{2}-\d{2})$/);
+    if (qrMatch) {
+      dateStr = qrMatch[1];
+    } else {
+      dateStr = parseDate(text);
+    }
+
+    if (!dateStr) {
+      return [{
+        type: 'text',
+        text: '日付の形式が正しくありません。\n「5月15日」や「5/15」のように入力するか、上のボタンから選択してください。',
+      }];
+    }
+
+    // 過去日チェック
+    const now   = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const selected  = new Date(y, m - 1, d);
+    if (selected < today) {
+      return [{ type: 'text', text: '過去の日付は選択できません。本日以降をお選びください。' }];
+    }
+
+    // 空き時間を取得
+    try {
+      const slots = await getAvailableSlots(dateStr, session.duration);
+      setSession(userId, { step: 'time_select', date: dateStr, availableSlots: slots });
+
+      const menuName = config.MENUS[session.menu];
+      return [{ type: 'text', text: formatSlotsText(slots, dateStr, menuName, session.duration) }];
+    } catch (err) {
+      console.error('空き時間取得エラー:', err);
+      return [{ type: 'text', text: 'エラーが発生しました。しばらくしてから再度お試しください。' }];
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // STEP: 時間帯選択（ユーザーが時刻を入力）
+  // ════════════════════════════════════════════════════════════
+  if (session.step === 'time_select') {
+    // 「他の日付」で日付再選択
+    if (text.includes('他の日付') || text.includes('別の日') || text.includes('日付を変')) {
+      setSession(userId, { step: 'date_input', availableSlots: undefined, date: undefined });
+      return [buildDateMessage()];
+    }
+
+    const time = parseTime(text);
+    if (!time) {
+      return [{ type: 'text', text: '時刻の形式が正しくありません。\n「14:30」のように入力してください。' }];
+    }
+
+    if (!session.availableSlots || !session.availableSlots.includes(time)) {
+      return [{
+        type: 'text',
+        text: `「${time}」は空きがないか、無効な時間帯です。\nリストに表示された時間をご入力ください。`,
+      }];
+    }
+
+    setSession(userId, { step: 'name_input', time });
+    return [{ type: 'text', text: '👤 お名前（フルネーム）をご入力ください\n（例：田中 太郎）' }];
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // STEP: 名前入力
+  // ════════════════════════════════════════════════════════════
+  if (session.step === 'name_input') {
+    const name = text.trim();
+    if (name.length < 1 || name.length > 30) {
+      return [{ type: 'text', text: 'お名前をご入力ください（1〜30文字）。' }];
+    }
+    setSession(userId, { step: 'confirm', name });
+    return [buildConfirmMessage({ ...session, name })];
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // STEP: 予約確認
+  // ════════════════════════════════════════════════════════════
+  if (session.step === 'confirm') {
+    if (text === '確認:yes') {
+      try {
+        const endTime = await saveBooking({
+          date:     session.date,
+          time:     session.time,
+          menu:     session.menu,
+          duration: session.duration,
+          name:     session.name,
+          userId,
+        });
+
+        // セッションクリア（確定前に保存）
+        const savedSession = { ...session };
+        clearSession(userId);
+
+        // オーナー通知（非同期・失敗しても続行）
+        notifyOwner(client, savedSession, endTime).catch(() => {});
+
+        return [buildCompleteMessage(savedSession, endTime)];
+
+      } catch (err) {
+        console.error('予約保存エラー:', err);
+        return [{
+          type: 'text',
+          text: '申し訳ありません、予約の保存に失敗しました。\nお手数ですが、再度「予約」と送ってお試しください。',
+        }];
+      }
+    }
+
+    if (text === '確認:no') {
+      clearSession(userId);
+      return [{
+        type: 'text',
+        text: '予約をリセットしました。\n\n「予約」と送ると最初からやり直せます。',
+      }];
+    }
+
+    return [{ type: 'text', text: 'ボタンから選択してください。' }];
+  }
+
+  return null;
+}
+
+module.exports = { handleBookingFlow };
