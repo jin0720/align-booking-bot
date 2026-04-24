@@ -1,27 +1,77 @@
-// src/sheetsService.js - Google Sheets 予約データ管理
+// src/sheetsService.js - Google Sheets & Calendar 予約データ管理
 const { google } = require('googleapis');
 const config = require('./config');
 const { timeToMinutes, minutesToTime } = require('./utils');
-const { getCalendarEventsForDate, addEventToCalendar } = require('./calendarService');
 
+let _auth = null;
 let _sheets = null;
+let _calendar = null;
 
-/** Google Sheets クライアントを返す (シングルトン) */
+/** Google Auth クライアントを返す */
+async function getAuth() {
+  if (_auth) return _auth;
+  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  _auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: [
+      'https://www.googleapis.com/auth/spreadsheets',
+      'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/calendar.events',
+    ],
+  });
+  return _auth;
+}
+
+/** Google Sheets クライアント */
 async function getSheets() {
   if (_sheets) return _sheets;
-  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-  const auth = new google.auth.GoogleAuth({
-    credentials,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
+  const auth = await getAuth();
   _sheets = google.sheets({ version: 'v4', auth });
   return _sheets;
 }
 
-/**
- * シートにヘッダー行がなければ作成する
- * 列構成: 日付 | 開始時間 | 終了時間 | メニュー | 時間(分) | お名前 | LINE UserID | 予約日時 | ステータス
- */
+/** Google Calendar クライアント */
+async function getCalendar() {
+  if (_calendar) return _calendar;
+  const auth = await getAuth();
+  _calendar = google.calendar({ version: 'v3', auth });
+  return _calendar;
+}
+
+/** Googleカレンダーから予定を取得 */
+async function getCalendarEvents(dateStr) {
+  if (!config.CALENDAR_ID) {
+    console.log('⚠️ CALENDAR_ID が設定されていません。スキップします。');
+    return [];
+  }
+  console.log(`🔍 カレンダー確認中: ${dateStr}`);
+  try {
+    const calendar = await getCalendar();
+    const timeMin = new Date(`${dateStr}T00:00:00+09:00`).toISOString();
+    const timeMax = new Date(`${dateStr}T23:59:59+09:00`).toISOString();
+
+    const res = await calendar.events.list({
+      calendarId: config.CALENDAR_ID,
+      timeMin,
+      timeMax,
+      singleEvents: true,
+      orderBy: 'startTime',
+      timeZone: 'Asia/Tokyo',
+    });
+
+    const events = res.data.items || [];
+    console.log(`✅ カレンダーから ${events.length} 件取得しました。`);
+    return events.map(e => ({
+      start: e.start.dateTime ? (new Date(e.start.dateTime).getHours() * 60 + new Date(e.start.dateTime).getMinutes()) : 0,
+      end:   e.end.dateTime   ? (new Date(e.end.dateTime).getHours()   * 60 + new Date(e.end.dateTime).getMinutes())   : 1440,
+    }));
+  } catch (err) {
+    console.error('❌ カレンダー取得失敗:', err.message);
+    return [];
+  }
+}
+
+/** シートにヘッダー行作成 */
 async function ensureHeaders() {
   const sheets = await getSheets();
   const res = await sheets.spreadsheets.values.get({
@@ -37,94 +87,63 @@ async function ensureHeaders() {
         values: [['日付', '開始時間', '終了時間', 'メニュー', '時間（分）', 'お名前', 'LINE UserID', '予約日時', 'ステータス']],
       },
     });
-    console.log('✅ シートにヘッダー行を作成しました');
   }
 }
 
-/**
- * 指定日の「確定」済み予約をすべて取得
- * @param {string} dateStr "YYYY-MM-DD"
- * @returns {Array} rows
- */
+/** 指定日の既存予約を取得 */
 async function getReservationsForDate(dateStr) {
   const sheets = await getSheets();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.SPREADSHEET_ID,
     range: `${config.SHEET_NAME}!A:I`,
   });
-
   const rows = res.data.values || [];
-  if (rows.length <= 1) return []; // ヘッダーのみ or 空
-
-  // row[0]=日付, row[1]=開始, row[2]=終了, row[8]=ステータス
   return rows.slice(1).filter(row => row[0] === dateStr && row[8] === '確定');
 }
 
-/**
- * 指定日・指定時間の空きスロット一覧を返す
- * @param {string} dateStr "YYYY-MM-DD"
- * @param {number} duration 施術時間（分）
- * @returns {string[]} 空き時間の配列 ["10:00", "10:30", ...]
- */
+/** 空き時間を取得 */
 async function getAvailableSlots(dateStr, duration) {
   const { BUSINESS_START, BUSINESS_END, SLOT_INTERVAL } = config;
-
+  
+  // 予約とカレンダーの両方を取得
   const reservations = await getReservationsForDate(dateStr);
-  const calEvents    = await getCalendarEventsForDate(dateStr);
+  const calEvents    = await getCalendarEvents(dateStr);
 
-  // 当日の場合は「現在時刻 + 1時間」以降のスロットのみ表示
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  const nowMinutes = (dateStr === todayStr)
-    ? now.getHours() * 60 + now.getMinutes() + 60  // 当日は1時間後以降
-    : 0;
+  const nowMinutes = (dateStr === todayStr) ? (now.getHours() * 60 + now.getMinutes() + 60) : 0;
 
   const lastStart = BUSINESS_END - duration;
   const available = [];
 
   for (let t = BUSINESS_START; t <= lastStart; t += SLOT_INTERVAL) {
-    // 当日の過去スロットはスキップ
     if (t < nowMinutes) continue;
-
     const slotEnd = t + duration;
     let isAvailable = true;
 
-    // 既存予約との重複チェック
+    // スプレッドシート側の予約チェック
     for (const row of reservations) {
-      const resStart = timeToMinutes(row[1]);
-      const resEnd   = timeToMinutes(row[2]);
-      // オーバーラップ判定: slotStart < resEnd && slotEnd > resStart
-      if (t < resEnd && slotEnd > resStart) {
-        isAvailable = false;
-        break;
+      if (t < timeToMinutes(row[2]) && slotEnd > timeToMinutes(row[1])) {
+        isAvailable = false; break;
       }
     }
-
-    // Googleカレンダーとの重複チェック
+    // Googleカレンダー側の予約チェック
     if (isAvailable) {
       for (const event of calEvents) {
         if (t < event.end && slotEnd > event.start) {
-          isAvailable = false;
-          break;
+          isAvailable = false; break;
         }
       }
     }
-
     if (isAvailable) available.push(minutesToTime(t));
   }
-
   return available;
 }
 
-/**
- * 予約をシートに保存する
- * @param {object} booking { date, time, menu, duration, name, userId }
- * @returns {string} 終了時刻 "HH:mm"
- */
+/** 予約を保存 */
 async function saveBooking({ date, time, menu, duration, name, userId }) {
   await ensureHeaders();
   const sheets = await getSheets();
-
   const endMinutes = timeToMinutes(time) + parseInt(duration);
   const endTime    = minutesToTime(endMinutes);
   const menuName   = config.MENUS[menu] || menu;
@@ -135,27 +154,24 @@ async function saveBooking({ date, time, menu, duration, name, userId }) {
     range: `${config.SHEET_NAME}!A:I`,
     valueInputOption: 'USER_ENTERED',
     requestBody: {
-      values: [[
-        date,      // A: 日付
-        time,      // B: 開始時間
-        endTime,   // C: 終了時間
-        menuName,  // D: メニュー
-        duration,  // E: 時間（分）
-        name,      // F: お名前
-        userId,    // G: LINE UserID
-        now,       // H: 予約日時
-        '確定',    // I: ステータス
-      ]],
+      values: [[date, time, endTime, menuName, duration, name, userId, now, '確定']],
     },
   });
 
-  console.log(`📝 予約保存: ${date} ${time}〜${endTime} ${menuName} ${name}様`);
-
-  // Googleカレンダーに追加
+  // Googleカレンダーに自動追加
   try {
-    await addEventToCalendar({ date, time, endTime, menuName, name });
+    const calendar = await getCalendar();
+    await calendar.events.insert({
+      calendarId: config.CALENDAR_ID,
+      requestBody: {
+        summary: `【LINE予約】${name}様 (${menuName})`,
+        description: `LINEからの予約です。\nお名前: ${name}様\n時間: ${duration}分`,
+        start: { dateTime: `${date}T${time}:00+09:00`, timeZone: 'Asia/Tokyo' },
+        end:   { dateTime: `${date}T${endTime}:00+09:00`, timeZone: 'Asia/Tokyo' },
+      },
+    });
   } catch (err) {
-    console.error('⚠️ Googleカレンダーへの追加に失敗しました (予約は完了しています):', err.message);
+    console.error('⚠️ カレンダー追加失敗:', err.message);
   }
 
   return endTime;
