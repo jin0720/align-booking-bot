@@ -28,14 +28,13 @@ function clearSession(userId) {
 // ────────────────────────────────────────────────────────────────
 // キーワード定義
 // ────────────────────────────────────────────────────────────────
-const TRIGGER_KEYWORDS = ['予約', 'よやく', '空き', '予約したい', 'よやくしたい', 'reservation', 'book'];
-const CANCEL_KEYWORDS  = ['キャンセル', 'やめる', 'やめ', 'cancel', '最初から', 'やり直し'];
+const TRIGGER_KEYWORDS = ['マッサージ予約', 'マッサージ予約（自動）', 'マッサージ予約(自動)'];
 
 function isTriggered(text) {
-  return TRIGGER_KEYWORDS.some(k => text.toLowerCase().includes(k));
+  return TRIGGER_KEYWORDS.some(k => text === k);
 }
 function isCancelled(text) {
-  return CANCEL_KEYWORDS.some(k => text.toLowerCase().includes(k));
+  return CANCEL_KEYWORDS.some(k => text.toLowerCase().includes(k)) || text === 'リセット' || text === '最初から';
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -213,24 +212,27 @@ async function handleBookingFlow(userId, text, client) {
     return [{ type: 'text', text: `あなたのLINE User IDは：\n${userId}` }];
   }
 
+  // ── 予約開始トリガー (どこにいても最初から開始できるようにする) ───
+  if (isTriggered(text)) {
+    clearSession(userId);
+    setSession(userId, { step: 'menu_select' });
+    return buildWelcomeMessages();
+  }
+
   // ── キャンセル処理 ───────────────────────────────────────────
   if (session.step !== 'idle' && isCancelled(text)) {
     clearSession(userId);
     return [{
       type: 'text',
-      text: '🔄 予約をリセットしました。\n\n「予約」と送ると最初からやり直せます。',
+      text: '🔄 予約をリセットしました。\n\n「マッサージ予約」と送ると最初からやり直せます。',
     }];
   }
 
   // ════════════════════════════════════════════════════════════
-  // STEP: idle → メニュー選択へ
+  // STEP: idle (トリガー以外は無視)
   // ════════════════════════════════════════════════════════════
   if (session.step === 'idle') {
-    if (isTriggered(text)) {
-      setSession(userId, { step: 'menu_select' });
-      return buildWelcomeMessages();
-    }
-    return null; // 予約トリガーでない場合は無視
+    return null;
   }
 
   // ════════════════════════════════════════════════════════════
@@ -370,7 +372,7 @@ async function handleBookingFlow(userId, text, client) {
         console.error('予約保存エラー:', err);
         return [{
           type: 'text',
-          text: '申し訳ありません、予約の保存に失敗しました。\nお手数ですが、再度「予約」と送ってお試しください。',
+          text: '申し訳ありません、予約の保存に失敗しました。\nお手数ですが、再度「マッサージ予約」と送ってお試しください。',
         }];
       }
     }
@@ -379,7 +381,7 @@ async function handleBookingFlow(userId, text, client) {
       clearSession(userId);
       return [{
         type: 'text',
-        text: '予約をリセットしました。\n\n「予約」と送ると最初からやり直せます。',
+        text: '予約をリセットしました。\n\n「マッサージ予約」と送ると最初からやり直せます。',
       }];
     }
 

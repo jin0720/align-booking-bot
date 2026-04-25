@@ -14,8 +14,8 @@ async function handleEvent(event, client) {
   const text       = event.message.text.trim();
   const replyToken = event.replyToken;
 
-  console.log(`📩 [${userId}] ${text}`);
-
+  console.log(`📩 [${userId}] 受信: "${text}" (長さ: ${text.length})`);
+  
   try {
     const messages = await handleBookingFlow(userId, text, client);
 
