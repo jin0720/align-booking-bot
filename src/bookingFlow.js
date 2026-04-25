@@ -46,7 +46,7 @@ function buildWelcomeMessages() {
   return [
     {
       type: 'text',
-      text: '🌿 Alignへのご予約ありがとうございます！\n\n「キャンセル」と送るといつでも最初に戻れます。',
+      text: '🌿 Alignへのご予約ありがとうございます！\n\n「リセット」と送るといつでも最初に戻れます。',
     },
     {
       type: 'template',
