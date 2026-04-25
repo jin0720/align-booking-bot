@@ -33,7 +33,7 @@ async function handleEvent(event, client) {
         replyToken,
         messages: [{
           type: 'text',
-          text: '申し訳ありません、エラーが発生しました。\nしばらくしてから再度お試しいただくか、お電話にてご連絡ください。',
+          text: `エラーが発生しました。\n詳細: ${err.message || '不明なエラー'}`,
         }],
       });
     } catch (_) { /* replyTokenが期限切れの場合など */ }

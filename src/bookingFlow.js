@@ -71,13 +71,13 @@ function buildDurationMessage(menuName) {
     altText: 'コースを選択してください',
     template: {
       type: 'buttons',
-      title: `⏱ コース選択`,
-      text: `${menuName}: 1,000円OFF ✨`,
+      title: 'コース選択',
+      text: menuName + ' (初回1,000円OFF)',
       actions: [
-        { type: 'message', label: '70分  ¥9,000',  text: '時間:70' },
-        { type: 'message', label: '100分 ¥12,000', text: '時間:100' },
-        { type: 'message', label: '130分 ¥15,000', text: '時間:130' },
-        { type: 'message', label: '160分 ¥18,000', text: '時間:160' },
+        { type: 'message', label: '70分  9,000円',  text: '時間:70' },
+        { type: 'message', label: '100分 12,000円', text: '時間:100' },
+        { type: 'message', label: '130分 15,000円', text: '時間:130' },
+        { type: 'message', label: '160分 18,000円', text: '時間:160' },
       ],
     },
   };
