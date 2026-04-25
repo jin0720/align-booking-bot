@@ -71,8 +71,8 @@ function buildDurationMessage(menuName) {
     altText: 'コースを選択してください',
     template: {
       type: 'buttons',
-      title: `⏱ コース選択 | ${menuName}`,
-      text: 'オープン記念 全コース ¥1,000OFF ✨',
+      title: `⏱ コース選択`,
+      text: `${menuName}: 1,000円OFF ✨`,
       actions: [
         { type: 'message', label: '70分  ¥9,000',  text: '時間:70' },
         { type: 'message', label: '100分 ¥12,000', text: '時間:100' },
