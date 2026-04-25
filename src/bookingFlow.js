@@ -29,12 +29,13 @@ function clearSession(userId) {
 // キーワード定義
 // ────────────────────────────────────────────────────────────────
 const TRIGGER_KEYWORDS = ['マッサージ予約', 'マッサージ予約（自動）', 'マッサージ予約(自動)'];
+const CANCEL_KEYWORDS  = ['キャンセル', 'やめる', 'やめ', 'cancel', '最初から', 'やり直し', 'リセット'];
 
 function isTriggered(text) {
   return TRIGGER_KEYWORDS.some(k => text === k);
 }
 function isCancelled(text) {
-  return CANCEL_KEYWORDS.some(k => text.toLowerCase().includes(k)) || text === 'リセット' || text === '最初から';
+  return CANCEL_KEYWORDS.some(k => text.toLowerCase().includes(k));
 }
 
 // ────────────────────────────────────────────────────────────────
