@@ -137,9 +137,9 @@ async function getReservationsForDate(dateStr) {
 async function getAvailableSlots(dateStr, duration) {
   const { BUSINESS_START, BUSINESS_END, SLOT_INTERVAL } = config;
   
-  // 予約とカレンダーの両方を取得
-  const reservations = await getReservationsForDate(dateStr);
-  const calEvents    = await getCalendarEvents(dateStr);
+  // 空き時間の判定はGoogleカレンダーを唯一のソースとする
+  // (スプレッドシートはログ・記録用とし、カレンダーから削除すれば予約可能になるようにする)
+  const calEvents = await getCalendarEvents(dateStr);
 
   const now = new Date();
   
@@ -170,20 +170,14 @@ async function getAvailableSlots(dateStr, duration) {
     const slotEnd = t + duration;
     let isAvailable = true;
 
-    // スプレッドシート側の予約チェック
-    for (const row of reservations) {
-      if (t < timeToMinutes(row[2]) && slotEnd > timeToMinutes(row[1])) {
-        isAvailable = false; break;
-      }
-    }
     // Googleカレンダー側の予約チェック
-    if (isAvailable) {
-      for (const event of calEvents) {
-        if (t < event.end && slotEnd > event.start) {
-          isAvailable = false; break;
-        }
+    for (const event of calEvents) {
+      if (t < event.end && slotEnd > event.start) {
+        isAvailable = false;
+        break;
       }
     }
+
     if (isAvailable) available.push(minutesToTime(t));
   }
   return available;
