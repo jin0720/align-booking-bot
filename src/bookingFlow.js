@@ -329,20 +329,19 @@ async function handleBookingFlow(userId, text, client) {
       }];
     }
 
-    setSession(userId, { step: 'name_input', time });
-    return [{ type: 'text', text: '👤 お名前（フルネーム）をご入力ください\n（例：田中 太郎）' }];
-  }
-
-  // ════════════════════════════════════════════════════════════
-  // STEP: 名前入力
-  // ════════════════════════════════════════════════════════════
-  if (session.step === 'name_input') {
-    const name = text.trim();
-    if (name.length < 1 || name.length > 30) {
-      return [{ type: 'text', text: 'お名前をご入力ください（1〜30文字）。' }];
+    // 名前入力をスキップし、LINEプロフィールから名前を取得して確認へ進む
+    let name = 'LINEユーザー';
+    try {
+      const profile = await client.getProfile(userId);
+      if (profile && profile.displayName) {
+        name = profile.displayName;
+      }
+    } catch (err) {
+      console.error('LINEプロフィール取得失敗:', err.message);
     }
-    setSession(userId, { step: 'confirm', name });
-    return [buildConfirmMessage({ ...session, name })];
+
+    setSession(userId, { step: 'confirm', time, name });
+    return [buildConfirmMessage({ ...session, time, name })];
   }
 
   // ════════════════════════════════════════════════════════════
