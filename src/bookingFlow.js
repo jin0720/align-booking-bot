@@ -158,6 +158,7 @@ function buildCompleteMessage(session, endTime) {
       `🕐 ${session.time}〜${endTime}\n` +
       `👤 ${session.name} 様\n\n` +
       `ご来店を心よりお待ちしております✨\n\n` +
+      `※サロンの最寄駅は東高円寺(1番出口)から徒歩3分になります。詳細は後ほどご連絡いたしますので少々お待ちください。\n\n` +
       `【キャンセルについて】\n` +
       `前日23時まで：無料\n` +
       `それ以降（当日キャンセル）：全額\n\n` +
