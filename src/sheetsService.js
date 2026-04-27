@@ -253,21 +253,40 @@ async function getUserReservations(userId) {
     range: `${config.SHEET_NAME}!A:I`,
   });
   const rows = res.data.values || [];
+  // 現在時刻 (JST)
   const now = new Date();
+  const jstNowStr = now.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+  const jstNow = new Date(jstNowStr);
   
-  // 今日より後の予約、または今日の予約でまだ開始時間前のものをフィルタ
-  // (キャンセルルールのために昨日23時以降も含める必要があるが、基本は未来の予約が対象)
-  return rows.slice(1).map((row, index) => ({
-    rowIndex: index + 2, // 1-indexed header + 1-indexed spreadsheet
-    date: row[0],
-    time: row[1],
-    endTime: row[2],
-    menu: row[3],
-    duration: row[4],
-    name: row[5],
-    userId: row[6],
-    status: row[8],
-  })).filter(r => r.userId === userId && r.status === '確定');
+  return rows.slice(1).map((row, index) => {
+    if (!row || row.length < 9) return null;
+    return {
+      rowIndex: index + 2,
+      date: row[0],
+      time: row[1],
+      endTime: row[2],
+      menu: row[3],
+      duration: row[4],
+      name: row[5],
+      userId: String(row[6]).trim(),
+      status: row[8],
+    };
+  }).filter(r => {
+    if (!r) return false;
+    if (r.userId !== String(userId).trim() || r.status !== '確定') return false;
+
+    // 過去の予約を除外
+    try {
+      const [y, m, d] = r.date.split('-').map(Number);
+      const [hh, mm] = r.time.split(':').map(Number);
+      const resDate = new Date(y, m - 1, d, hh, mm);
+      // 開始時間から1時間たったものは非表示にする（あるいは厳密に現在時刻以降）
+      // ここでは厳密に「現在時刻よりも開始時間が後」のものだけを表示
+      return resDate >= jstNow;
+    } catch (e) {
+      return false; // 日付形式エラーなどは除外
+    }
+  });
 }
 
 /** 予約をキャンセル */
