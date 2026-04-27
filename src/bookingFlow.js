@@ -38,6 +38,9 @@ function isTriggered(text) {
   return TRIGGER_KEYWORDS.some(k => text === k);
 }
 function isCancelled(text) {
+  if (text.startsWith('キャンセル実行:')) return false;
+  if (LIST_RESERVATIONS_KEYWORDS.some(k => text.includes(k))) return false;
+  if (CANCEL_RESERVATION_KEYWORDS.some(k => text.includes(k))) return false;
   return CANCEL_KEYWORDS.some(k => text.toLowerCase().includes(k));
 }
 function isReservationCancelTriggered(text) {
