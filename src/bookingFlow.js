@@ -541,7 +541,7 @@ function buildReservationListMessage(reservations) {
 
     return {
       type: 'bubble',
-      size: 'list',
+      size: 'mega',
       header: {
         type: 'box',
         layout: 'vertical',
