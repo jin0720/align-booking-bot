@@ -641,15 +641,6 @@ async function handleBookingFlow(userId, text, client) {
     return buildWelcomeMessages();
   }
 
-  // ── キャンセル処理 ───────────────────────────────────────────
-  if (session.step !== 'idle' && isCancelled(text)) {
-    clearSession(userId);
-    return [{
-      type: 'text',
-      text: '🔄 操作をリセットしました。\n\n「マッサージ予約」と送ると予約を再開できます。',
-    }];
-  }
-
   // ── 予約キャンセル・確認開始トリガー ──────────────────────────────────
   if (isReservationCancelTriggered(text) || LIST_RESERVATIONS_KEYWORDS.some(k => text.includes(k))) {
     try {
@@ -660,6 +651,15 @@ async function handleBookingFlow(userId, text, client) {
       console.error('予約一覧取得失敗:', err);
       return [{ type: 'text', text: '予約情報の取得に失敗しました。' }];
     }
+  }
+
+  // ── キャンセル処理 (セッションのリセット) ──────────────────────────
+  if (session.step !== 'idle' && isCancelled(text)) {
+    clearSession(userId);
+    return [{
+      type: 'text',
+      text: '🔄 操作をリセットしました。\n\n「マッサージ予約」と送ると予約を再開できます。',
+    }];
   }
 
   // ── 日付入力の割り込み処理 (どのステップでも日付ボタンが押されたら受け付ける) ───
