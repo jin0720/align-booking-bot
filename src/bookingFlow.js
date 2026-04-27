@@ -522,6 +522,11 @@ async function handleBookingFlow(userId, text, client) {
     }];
   }
 
+  // ── 日付入力の割り込み処理 (どのステップでも日付ボタンが押されたら受け付ける) ───
+  if (session.step !== 'idle' && text.startsWith('日付:')) {
+    session.step = 'date_input';
+  }
+
   // ════════════════════════════════════════════════════════════
   // STEP: idle (トリガー以外は無視)
   // ════════════════════════════════════════════════════════════
