@@ -47,7 +47,7 @@ function buildWelcomeMessages() {
   return [
     {
       type: 'text',
-      text: '🌿 Alignへのご予約ありがとうございます！\n\n「リセット」と送るといつでも最初に戻れます。',
+      text: 'お問い合わせありがとうございます！\n\n｢リセット｣と送るといつでも最初に戻れます。',
     },
     {
       type: 'template',
@@ -73,7 +73,7 @@ function buildDurationMessage(menuName) {
     template: {
       type: 'buttons',
       title: 'コース選択',
-      text: menuName + ' (初回1,000円OFF)',
+      text: menuName,
       actions: [
         { type: 'message', label: '70分  9,000円',  text: '時間:70' },
         { type: 'message', label: '100分 12,000円', text: '時間:100' },
@@ -165,6 +165,114 @@ function buildCompleteMessage(session, endTime) {
       `※前日23時以降のキャンセルは全額を頂戴いたします。\n\n` +
       `キャンセル・変更はこちらのLINEまでお知らせください。`
     ),
+  };
+}
+
+/** 時間選択 Flex Message */
+function buildTimeFlexMessage(slots, dateStr, menuName, duration) {
+  if (slots.length === 0) {
+    return {
+      type: 'text',
+      text: `😢 ${formatDateJP(dateStr)} は ${duration}分コースの空き時間がありません。\n別の日付を選択してください。`,
+      quickReply: buildDateMessage().quickReply
+    };
+  }
+
+  const dateJP = formatDateJP(dateStr);
+  
+  // 1行に3つボタンを並べる
+  const rows = [];
+  for (let i = 0; i < slots.length; i += 3) {
+    const chunk = slots.slice(i, i + 3);
+    const contents = chunk.map(time => ({
+      type: 'button',
+      action: {
+        type: 'message',
+        label: time,
+        text: time
+      },
+      style: 'primary',
+      color: '#8C7A6B', // サロンのブランドカラー
+      height: 'sm',
+      margin: 'xs'
+    }));
+    
+    // 足りない分はダミーで埋めてスペース調整
+    while (contents.length < 3) {
+      contents.push({ type: 'spacer' });
+    }
+
+    rows.push({
+      type: 'box',
+      layout: 'horizontal',
+      contents: contents,
+      margin: 'sm'
+    });
+  }
+
+  return {
+    type: 'flex',
+    altText: `${dateJP} の空き時間選択`,
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: '🕘 空き時間選択',
+            weight: 'bold',
+            size: 'lg',
+            color: '#ffffff'
+          },
+          {
+            type: 'text',
+            text: `${dateJP} / ${menuName} (${duration}分)`,
+            size: 'sm',
+            color: '#eeeeee',
+            margin: 'xs'
+          }
+        ],
+        backgroundColor: '#8C7A6B'
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: 'ご希望の時間を選択してください',
+            size: 'sm',
+            color: '#666666',
+            margin: 'md',
+            wrap: true
+          },
+          {
+            type: 'box',
+            layout: 'vertical',
+            contents: rows,
+            margin: 'lg'
+          }
+        ]
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'button',
+            action: {
+              type: 'message',
+              label: '📅 他の日付を選択する',
+              text: '他の日付'
+            },
+            style: 'link',
+            color: '#8C7A6B'
+          }
+        ]
+      }
+    }
   };
 }
 
@@ -305,7 +413,7 @@ async function handleBookingFlow(userId, text, client) {
       setSession(userId, { step: 'time_select', date: dateStr, availableSlots: slots });
 
       const menuName = config.MENUS[session.menu];
-      return [{ type: 'text', text: formatSlotsText(slots, dateStr, menuName, session.duration) }];
+      return [buildTimeFlexMessage(slots, dateStr, menuName, session.duration)];
     } catch (err) {
       console.error('空き時間取得エラー:', err);
       return [{ type: 'text', text: 'エラーが発生しました。しばらくしてから再度お試しください。' }];
