@@ -3,7 +3,7 @@
 // 各ユーザーの会話状態をメモリ上で管理する
 
 const config  = require('./config');
-const { getAvailableSlots, saveBooking } = require('./sheetsService');
+const { getAvailableSlots, saveBooking, getUserReservations, cancelBooking } = require('./sheetsService');
 const {
   timeToMinutes, minutesToTime,
   formatDateJP, parseDate, parseTime, formatSlotsText,
@@ -22,6 +22,7 @@ function setSession(userId, data) {
   sessions.set(userId, { ...getSession(userId), ...data });
 }
 function clearSession(userId) {
+  console.log(`🧹 [${userId}] セッションをクリア`);
   sessions.set(userId, { step: 'idle' });
 }
 
@@ -30,12 +31,17 @@ function clearSession(userId) {
 // ────────────────────────────────────────────────────────────────
 const TRIGGER_KEYWORDS = ['マッサージ予約', 'マッサージ予約（自動）', 'マッサージ予約(自動)'];
 const CANCEL_KEYWORDS  = ['キャンセル', 'やめる', 'やめ', 'cancel', '最初から', 'やり直し', 'リセット'];
+const LIST_RESERVATIONS_KEYWORDS = ['予約表示', '予約確認', '予約一覧', '予約の確認・変更・キャンセル', '予約の確認・変更', '変更・キャンセル'];
+const CANCEL_RESERVATION_KEYWORDS = ['予約キャンセル', '予約のキャンセル', 'キャンセルしたい'];
 
 function isTriggered(text) {
   return TRIGGER_KEYWORDS.some(k => text === k);
 }
 function isCancelled(text) {
   return CANCEL_KEYWORDS.some(k => text.toLowerCase().includes(k));
+}
+function isReservationCancelTriggered(text) {
+  return CANCEL_RESERVATION_KEYWORDS.some(k => text.includes(k));
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -342,8 +348,7 @@ function buildCompleteMessage(session, endTime) {
       `【キャンセルについて】\n` +
       `前日23時まで：無料\n` +
       `それ以降（当日キャンセル）：全額\n\n` +
-      `※前日23時以降のキャンセルは全額を頂戴いたします。\n\n` +
-      `キャンセル・変更はこちらのLINEまでお知らせください。`
+      `※前日23時以降のキャンセルは全額を頂戴いたします。`
     ),
   };
 }
@@ -487,6 +492,128 @@ async function notifyOwner(client, session, endTime) {
   }
 }
 
+/** オーナーへキャンセル通知送信 */
+async function notifyOwnerCancellation(client, reservation) {
+  const ownerId = config.OWNER_LINE_USER_ID;
+  if (!ownerId) return;
+
+  const dateJP = formatDateJP(reservation.date);
+
+  try {
+    await client.pushMessage({
+      to: ownerId,
+      messages: [{
+        type: 'text',
+        text: (
+          `⚠️ 予約がキャンセルされました。\n\n` +
+          `👤 ${reservation.name} 様\n` +
+          `📋 ${reservation.menu}\n` +
+          `📅 ${dateJP}\n` +
+          `🕐 ${reservation.time}〜${reservation.endTime}`
+        ),
+      }],
+    });
+    console.log(`🔔 オーナーへキャンセル通知送信完了`);
+  } catch (err) {
+    console.error('オーナーキャンセル通知送信失敗:', err.message);
+  }
+}
+
+/** 予約キャンセル確認 Flex */
+function buildReservationListMessage(reservations) {
+  if (reservations.length === 0) {
+    return [{
+      type: 'text',
+      text: '現在、確定している予約は見つかりませんでした。',
+    }];
+  }
+
+  const now = new Date();
+  
+  const bubbles = reservations.map(r => {
+    // キャンセル期限チェック (前日23時)
+    const [y, m, d] = r.date.split('-').map(Number);
+    const deadline = new Date(y, m - 1, d - 1);
+    deadline.setHours(23, 0, 0, 0);
+    
+    const canCancel = now < deadline;
+    const dateJP = formatDateJP(r.date);
+
+    return {
+      type: 'bubble',
+      size: 'list',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          { type: 'text', text: '📅 予約内容', weight: 'bold', size: 'md', color: '#ffffff' }
+        ],
+        backgroundColor: '#8C7A6B'
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          { type: 'text', text: `${dateJP} ${r.time}〜`, weight: 'bold', size: 'sm' },
+          { type: 'text', text: r.menu, size: 'xs', color: '#666666', margin: 'xs' },
+          { type: 'separator', margin: 'md' },
+          canCancel ? {
+            type: 'button',
+            action: { 
+              type: 'message', 
+              label: 'キャンセルする', 
+              text: `キャンセル実行:${r.date}:${r.time}` 
+            },
+            style: 'secondary',
+            height: 'sm',
+            color: '#ff4b4b',
+            margin: 'md'
+          } : {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: '※前日23時を過ぎているため、システムからのキャンセルはできません。',
+                size: 'xxs',
+                color: '#ff0000',
+                wrap: true,
+                margin: 'sm'
+              },
+              {
+                type: 'button',
+                action: { 
+                  type: 'uri', 
+                  label: 'LINEで相談する', 
+                  uri: 'https://line.me/R/oaMessage/@align' // 実際のアカウントIDに合わせて調整が必要な場合あり
+                },
+                style: 'link',
+                height: 'sm'
+              }
+            ],
+            margin: 'md'
+          }
+        ]
+      }
+    };
+  });
+
+  return [
+    {
+      type: 'text',
+      text: 'ご予約の確認・キャンセルが可能です。\n※日時の変更をご希望の場合は、現在の予約を一度キャンセルし、再度新規でご予約をお願いいたします。'
+    },
+    {
+      type: 'flex',
+      altText: '予約一覧',
+      contents: {
+        type: 'carousel',
+        contents: bubbles.slice(0, 10) // 最大10件
+      }
+    }
+  ];
+}
+
 // ────────────────────────────────────────────────────────────────
 // メインフロー
 // ────────────────────────────────────────────────────────────────
@@ -500,6 +627,7 @@ async function notifyOwner(client, session, endTime) {
  */
 async function handleBookingFlow(userId, text, client) {
   const session = getSession(userId);
+  console.log(`🔄 [${userId}] 現在のステップ: ${session.step}, 受信テキスト: "${text}"`);
 
   // ── IDチェック要求 (デバッグ用) ─────────────────────────────
   if (text.includes('自分のID') || text.includes('userid') || text === 'ID') {
@@ -518,12 +646,34 @@ async function handleBookingFlow(userId, text, client) {
     clearSession(userId);
     return [{
       type: 'text',
-      text: '🔄 予約をリセットしました。\n\n「マッサージ予約」と送ると最初からやり直せます。',
+      text: '🔄 操作をリセットしました。\n\n「マッサージ予約」と送ると予約を再開できます。',
     }];
   }
 
+  // ── 予約キャンセル・確認開始トリガー ──────────────────────────────────
+  if (isReservationCancelTriggered(text) || LIST_RESERVATIONS_KEYWORDS.some(k => text.includes(k))) {
+    try {
+      const reservations = await getUserReservations(userId);
+      setSession(userId, { step: 'cancel_exec', userReservations: reservations });
+      return buildReservationListMessage(reservations);
+    } catch (err) {
+      console.error('予約一覧取得失敗:', err);
+      return [{ type: 'text', text: '予約情報の取得に失敗しました。' }];
+    }
+  }
+
   // ── 日付入力の割り込み処理 (どのステップでも日付ボタンが押されたら受け付ける) ───
-  if (session.step !== 'idle' && text.startsWith('日付:')) {
+  if (text.startsWith('日付:')) {
+    if (session.step === 'idle') {
+      console.warn(`⚠️ [${userId}] セッションが idle 状態で日付が送信されました。再開を試みます。`);
+      // セッションが切れているが日付が送られてきた場合、とりあえずメニュー選択に戻るよう促すか、
+      // あるいはデフォルト（オイルマッサージ70分など）を想定して進めるのは危険なので、
+      // ユーザーに最初からやり直すよう伝える
+      return [{
+        type: 'text',
+        text: 'セッションがタイムアウトしたか、サーバーが再起動した可能性があります。\nお手数ですが「予約」と送って最初からやり直してください。'
+      }];
+    }
     session.step = 'date_input';
   }
 
@@ -594,14 +744,17 @@ async function handleBookingFlow(userId, text, client) {
 
     // 空き時間を取得
     try {
+      console.log(`🔍 [${userId}] 空き時間を取得中: ${dateStr}, duration: ${session.duration}`);
       const slots = await getAvailableSlots(dateStr, session.duration);
+      console.log(`✅ [${userId}] 空き時間取得完了: ${slots.length}件の枠が見つかりました`);
+      
       setSession(userId, { step: 'time_select', date: dateStr, availableSlots: slots });
 
-      const menuName = config.MENUS[session.menu];
+      const menuName = config.MENUS[session.menu] || 'メニュー';
       return [buildTimeFlexMessage(slots, dateStr, menuName, session.duration)];
     } catch (err) {
-      console.error('空き時間取得エラー:', err);
-      return [{ type: 'text', text: 'エラーが発生しました。しばらくしてから再度お試しください。' }];
+      console.error(`❌ [${userId}] 空き時間取得エラー:`, err);
+      return [{ type: 'text', text: '空き時間の取得中にエラーが発生しました。しばらくしてから再度お試しください。' }];
     }
   }
 
@@ -684,6 +837,50 @@ async function handleBookingFlow(userId, text, client) {
     }
 
     return [{ type: 'text', text: 'ボタンから選択してください。' }];
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // STEP: 予約キャンセル実行
+  // ════════════════════════════════════════════════════════════
+  if (session.step === 'cancel_exec') {
+    const match = text.match(/^キャンセル実行:(\d{4}-\d{2}-\d{2}):(\d{2}:\d{2})$/);
+    if (match) {
+      const [, date, time] = match;
+      const reservation = session.userReservations?.find(r => r.date === date && r.time === time);
+      
+      if (!reservation) {
+        return [{ type: 'text', text: '該当する予約が見つかりませんでした。' }];
+      }
+
+      // 再度期限チェック (念のため)
+      const now = new Date();
+      const [y, m, d] = date.split('-').map(Number);
+      const deadline = new Date(y, m - 1, d - 1);
+      deadline.setHours(23, 0, 0, 0);
+
+      if (now >= deadline) {
+        return [{
+          type: 'text',
+          text: '申し訳ありませんが、前日23時を過ぎているためキャンセルできません。\n直接LINEでメッセージをお送りください。\nまた、規定のキャンセル料が発生いたしますのでご了承ください。'
+        }];
+      }
+
+      try {
+        await cancelBooking(reservation);
+        
+        clearSession(userId);
+        notifyOwnerCancellation(client, reservation).catch(() => {});
+
+        return [{
+          type: 'text',
+          text: `✅ 予約のキャンセルが完了しました。\n\n【キャンセル内容】\n📅 ${formatDateJP(date)}\n🕘 ${time}〜\n\nまたのご利用をお待ちしております。`
+        }];
+      } catch (err) {
+        console.error('キャンセル実行失敗:', err);
+        return [{ type: 'text', text: 'キャンセル処理中にエラーが発生しました。' }];
+      }
+    }
+    return [{ type: 'text', text: 'キャンセルしたい予約をボタンから選ぶか、「リセット」と送ってください。\n※日時の変更をご希望の場合は、現在の予約を一度キャンセルし、再度ご予約をお願いいたします。' }];
   }
 
   return null;

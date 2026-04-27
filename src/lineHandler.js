@@ -20,13 +20,20 @@ async function handleEvent(event, client) {
     const messages = await handleBookingFlow(userId, text, client);
 
     if (messages && messages.length > 0) {
+      console.log(`📤 [${userId}] 返信送信中: ${messages.length}件のメッセージ`);
       await client.replyMessage({
         replyToken,
         messages: messages.slice(0, 5), // LINE は1回のreplyで最大5件まで
       });
+      console.log(`✅ [${userId}] 返信送信完了`);
+    } else {
+      console.log(`ℹ️ [${userId}] 返信メッセージなし (null または空)`);
     }
   } catch (err) {
-    console.error(`[handleEvent] エラー (userId: ${userId}):`, err);
+    console.error(`❌ [handleEvent] エラー (userId: ${userId}):`, err.message);
+    if (err.response && err.response.data) {
+      console.error('  - 詳細:', JSON.stringify(err.response.data));
+    }
     // エラー時はユーザーに一般エラーメッセージを返す
     try {
       await client.replyMessage({

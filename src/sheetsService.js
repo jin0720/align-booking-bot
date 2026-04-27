@@ -57,48 +57,68 @@ async function getCalendarEvents(dateStr) {
       singleEvents: true,
       orderBy: 'startTime',
       timeZone: 'Asia/Tokyo',
+      maxResults: 100, // 多すぎると重くなるため制限
+    }, {
+      timeout: 10000, // 10秒でタイムアウト
     });
 
     const events = res.data.items || [];
-    console.log(`✅ カレンダーから ${events.length} 件取得しました。`);
+    console.log(`✅ [getCalendarEvents] ${dateStr} のカレンダーから ${events.length} 件取得しました。`);
+
+    if (dateStr === '2026-04-30') {
+      // 4/30の問題調査のため、生データをログ出力
+      console.log('📝 [DEBUG 4/30] Raw Events:', JSON.stringify(events.map(e => ({
+        summary: e.summary,
+        start: e.start,
+        end: e.end,
+        status: e.status
+      }))));
+    }
 
     return events.map(e => {
-      let start, end;
-
-      if (e.start.dateTime) {
-        // 時刻指定の予定: サーバーのTZに依存しないようJST文字列からパース
-        const startDate = new Date(e.start.dateTime);
-        const endDate   = new Date(e.end.dateTime);
-        
-        // JST基準での時間を取得 (intl を使用して確実に時・分を取り出す)
-        const getJSTTime = (date) => {
-          const parts = new Intl.DateTimeFormat('ja-JP', {
-            timeZone: 'Asia/Tokyo',
-            hour: 'numeric',
-            minute: 'numeric',
-            hour12: false
-          }).formatToParts(date);
-          let h = 0, m = 0;
-          for (const part of parts) {
-            if (part.type === 'hour') h = parseInt(part.value);
-            if (part.type === 'minute') m = parseInt(part.value);
+      try {
+        let start, end;
+        if (e.start.dateTime) {
+          const startDate = new Date(e.start.dateTime);
+          const endDate   = new Date(e.end.dateTime);
+          
+          if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            console.warn(`⚠️ [getCalendarEvents] 無効な日時イベントをスキップ: ${e.summary}`);
+            return null;
           }
-          return h * 60 + m;
-        };
 
-        start = getJSTTime(startDate);
-        end   = getJSTTime(endDate);
-      } else {
-        // 終日予定
-        start = 0;
-        end   = 1440;
+          const getJSTTime = (date) => {
+            const parts = new Intl.DateTimeFormat('ja-JP', {
+              timeZone: 'Asia/Tokyo',
+              hour: 'numeric', minute: 'numeric', hour12: false
+            }).formatToParts(date);
+            let h = 0, m = 0;
+            for (const part of parts) {
+              if (part.type === 'hour') h = parseInt(part.value);
+              if (part.type === 'minute') m = parseInt(part.value);
+            }
+            return h * 60 + m;
+          };
+
+          start = getJSTTime(startDate);
+          end   = getJSTTime(endDate);
+        } else if (e.start.date) {
+          // 終日予定
+          start = 0;
+          end   = 1440;
+        } else {
+          return null;
+        }
+        
+        return { start, end, summary: e.summary };
+      } catch (err) {
+        console.error(`⚠️ [getCalendarEvents] イベント処理中にエラー (スキップ):`, err.message);
+        return null;
       }
-      
-      console.log(`   - 予定: ${e.summary} (${start}分 〜 ${end}分)`);
-      return { start, end };
-    });
+    }).filter(e => e !== null);
   } catch (err) {
-    console.error('❌ カレンダー取得失敗:', err.message);
+    console.error(`❌ [getCalendarEvents] カレンダー取得失敗 (${dateStr}):`, err.message);
+    // 権限エラーやネットワークエラーでも空のリストを返して処理は止めない
     return [];
   }
 }
@@ -179,7 +199,12 @@ async function getAvailableSlots(dateStr, duration) {
     }
 
     if (isAvailable) available.push(minutesToTime(t));
+    if (t > 24*60) {
+      console.error('⛔️ 無限ループ防止: tが24時間を超えました');
+      break;
+    }
   }
+  console.log(`📊 [getAvailableSlots] 結果: ${available.length} 件の空きスロット (${dateStr}, ${duration}分)`);
   return available;
 }
 
@@ -220,4 +245,78 @@ async function saveBooking({ date, time, menu, duration, name, userId }) {
   return endTime;
 }
 
-module.exports = { getAvailableSlots, saveBooking, ensureHeaders };
+/** ユーザーの未来の予約を取得 */
+async function getUserReservations(userId) {
+  const sheets = await getSheets();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.SPREADSHEET_ID,
+    range: `${config.SHEET_NAME}!A:I`,
+  });
+  const rows = res.data.values || [];
+  const now = new Date();
+  
+  // 今日より後の予約、または今日の予約でまだ開始時間前のものをフィルタ
+  // (キャンセルルールのために昨日23時以降も含める必要があるが、基本は未来の予約が対象)
+  return rows.slice(1).map((row, index) => ({
+    rowIndex: index + 2, // 1-indexed header + 1-indexed spreadsheet
+    date: row[0],
+    time: row[1],
+    endTime: row[2],
+    menu: row[3],
+    duration: row[4],
+    name: row[5],
+    userId: row[6],
+    status: row[8],
+  })).filter(r => r.userId === userId && r.status === '確定');
+}
+
+/** 予約をキャンセル */
+async function cancelBooking({ rowIndex, date, time, name }) {
+  const sheets = await getSheets();
+  
+  // 1. スプレッドシートのステータスを更新
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: config.SPREADSHEET_ID,
+    range: `${config.SHEET_NAME}!I${rowIndex}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: {
+      values: [['キャンセル']],
+    },
+  });
+
+  // 2. Googleカレンダーから削除
+  try {
+    const calendar = await getCalendar();
+    const timeMin = `${date}T${time}:00+09:00`;
+    const timeMax = `${date}T${time}:01+09:00`; // ほぼピンポイントで検索
+
+    const res = await calendar.events.list({
+      calendarId: config.CALENDAR_ID,
+      timeMin,
+      timeMax,
+      q: name, // 名前で絞り込み
+      singleEvents: true,
+    });
+
+    const events = res.data.items || [];
+    // 完全に一致するものを探す
+    const targetEvent = events.find(e => 
+      e.summary.includes(name) && 
+      e.start.dateTime.startsWith(`${date}T${time}`)
+    );
+
+    if (targetEvent) {
+      await calendar.events.delete({
+        calendarId: config.CALENDAR_ID,
+        eventId: targetEvent.id,
+      });
+      console.log(`✅ カレンダーイベント削除完了: ${targetEvent.id}`);
+    } else {
+      console.warn(`⚠️ キャンセル対象のカレンダーイベントが見つかりませんでした (${date} ${time} ${name})`);
+    }
+  } catch (err) {
+    console.error('⚠️ カレンダー削除失敗:', err.message);
+  }
+}
+
+module.exports = { getAvailableSlots, saveBooking, ensureHeaders, getUserReservations, cancelBooking };
