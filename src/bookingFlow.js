@@ -42,7 +42,7 @@ function isCancelled(text) {
 // メッセージビルダー
 // ────────────────────────────────────────────────────────────────
 
-/** ウェルカム + メニュー選択ボタン */
+/** ウェルカム + メニュー選択 Flex */
 function buildWelcomeMessages() {
   return [
     {
@@ -50,37 +50,109 @@ function buildWelcomeMessages() {
       text: 'お問い合わせありがとうございます！\n\n｢リセット｣と送るといつでも最初に戻れます。',
     },
     {
-      type: 'template',
+      type: 'flex',
       altText: 'メニューを選択してください',
-      template: {
-        type: 'buttons',
-        title: '📋 メニュー選択',
-        text: 'ご希望のメニューをお選びください',
-        actions: [
-          { type: 'message', label: '💆 オイルマッサージ', text: 'メニュー:oil' },
-          { type: 'message', label: '🦴 整体',             text: 'メニュー:seitai' },
-        ],
-      },
-    },
+      contents: {
+        type: 'bubble',
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: '📋 メニュー選択',
+              weight: 'bold',
+              size: 'lg',
+              color: '#ffffff'
+            }
+          ],
+          backgroundColor: '#8C7A6B'
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: 'ご希望のメニューをお選びください',
+              size: 'sm',
+              color: '#666666'
+            },
+            {
+              type: 'box',
+              layout: 'vertical',
+              contents: [
+                {
+                  type: 'button',
+                  action: { type: 'message', label: '💆 オイルマッサージ', text: 'メニュー:oil' },
+                  style: 'primary',
+                  color: '#8C7A6B',
+                  margin: 'md'
+                },
+                {
+                  type: 'button',
+                  action: { type: 'message', label: '🦴 整体', text: 'メニュー:seitai' },
+                  style: 'primary',
+                  color: '#8C7A6B',
+                  margin: 'md'
+                }
+              ],
+              margin: 'lg'
+            }
+          ]
+        }
+      }
+    }
   ];
 }
 
-/** コース選択ボタン */
+/** コース選択 Flex */
 function buildDurationMessage(menuName) {
+  const durations = Object.entries(config.PRICES).map(([key, price]) => ({
+    label: `${price.label} ${price.original.toLocaleString()}→${price.discounted.toLocaleString()}円`,
+    value: key
+  }));
+
+  const rows = [];
+  for (let i = 0; i < durations.length; i += 2) {
+    const chunk = durations.slice(i, i + 2);
+    rows.push({
+      type: 'box',
+      layout: 'horizontal',
+      contents: chunk.map(d => ({
+        type: 'button',
+        action: { type: 'message', label: d.label, text: `時間:${d.value}` },
+        style: 'primary',
+        color: '#8C7A6B',
+        height: 'sm',
+        margin: 'xs'
+      })),
+      margin: 'md'
+    });
+  }
+
   return {
-    type: 'template',
+    type: 'flex',
     altText: 'コースを選択してください',
-    template: {
-      type: 'buttons',
-      title: 'コース選択',
-      text: menuName,
-      actions: [
-        { type: 'message', label: '70分  9,000円',  text: '時間:70' },
-        { type: 'message', label: '100分 12,000円', text: '時間:100' },
-        { type: 'message', label: '130分 15,000円', text: '時間:130' },
-        { type: 'message', label: '160分 18,000円', text: '時間:160' },
-      ],
-    },
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          { type: 'text', text: '⏱ コース選択', weight: 'bold', size: 'lg', color: '#ffffff' }
+        ],
+        backgroundColor: '#8C7A6B'
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          { type: 'text', text: `${menuName} を選択中`, size: 'sm', color: '#666666' },
+          { type: 'box', layout: 'vertical', contents: rows, margin: 'lg' }
+        ]
+      }
+    }
   };
 }
 
@@ -110,7 +182,7 @@ function buildDateMessage() {
   };
 }
 
-/** 予約確認メッセージ */
+/** 予約確認 Flex */
 function buildConfirmMessage(session) {
   const menuName = config.MENUS[session.menu];
   const price    = config.PRICES[session.duration];
@@ -118,25 +190,101 @@ function buildConfirmMessage(session) {
   const endTime  = minutesToTime(timeToMinutes(session.time) + parseInt(session.duration));
 
   return {
-    type: 'template',
+    type: 'flex',
     altText: '予約内容の確認',
-    template: {
-      type: 'confirm',
-      text: (
-        `【ご予約内容の確認】\n\n` +
-        `📋 ${menuName}\n` +
-        `⏱ ${session.duration}分コース\n` +
-        `💴 ¥${price.discounted.toLocaleString()} (¥1,000OFF)\n` +
-        `📅 ${dateJP}\n` +
-        `🕐 ${session.time}〜${endTime}\n` +
-        `👤 ${session.name} 様\n\n` +
-        `この内容でよろしいですか？`
-      ),
-      actions: [
-        { type: 'message', label: '✅ 予約する',  text: '確認:yes' },
-        { type: 'message', label: '❌ やり直す', text: '確認:no'  },
-      ],
-    },
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          { type: 'text', text: '✅ 予約内容の確認', weight: 'bold', size: 'lg', color: '#ffffff' }
+        ],
+        backgroundColor: '#8C7A6B'
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'box',
+            layout: 'vertical',
+            margin: 'md',
+            spacing: 'sm',
+            contents: [
+              {
+                type: 'box',
+                layout: 'horizontal',
+                contents: [
+                  { type: 'text', text: 'メニュー', size: 'sm', color: '#aaaaaa', flex: 2 },
+                  { type: 'text', text: menuName, size: 'sm', color: '#666666', flex: 4, wrap: true }
+                ]
+              },
+              {
+                type: 'box',
+                layout: 'horizontal',
+                contents: [
+                  { type: 'text', text: 'コース', size: 'sm', color: '#aaaaaa', flex: 2 },
+                  { type: 'text', text: `${session.duration}分`, size: 'sm', color: '#666666', flex: 4 }
+                ]
+              },
+              {
+                type: 'box',
+                layout: 'horizontal',
+                contents: [
+                  { type: 'text', text: '料金', size: 'sm', color: '#aaaaaa', flex: 2 },
+                  { 
+                    type: 'text', 
+                    text: `¥${price.original.toLocaleString()} → ¥${price.discounted.toLocaleString()}\n(オープン記念1,000円OFF)`, 
+                    size: 'sm', 
+                    color: '#666666', 
+                    flex: 4, 
+                    weight: 'bold',
+                    wrap: true
+                  }
+                ]
+              },
+              {
+                type: 'box',
+                layout: 'horizontal',
+                contents: [
+                  { type: 'text', text: '日時', size: 'sm', color: '#aaaaaa', flex: 2 },
+                  { type: 'text', text: `${dateJP}\n${session.time}〜${endTime}`, size: 'sm', color: '#666666', flex: 4, wrap: true }
+                ]
+              },
+              {
+                type: 'box',
+                layout: 'horizontal',
+                contents: [
+                  { type: 'text', text: 'お名前', size: 'sm', color: '#aaaaaa', flex: 2 },
+                  { type: 'text', text: `${session.name} 様`, size: 'sm', color: '#666666', flex: 4 }
+                ]
+              }
+            ]
+          },
+          {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'button',
+                action: { type: 'message', label: '✅ 予約を確定する', text: '確認:yes' },
+                style: 'primary',
+                color: '#8C7A6B'
+              },
+              {
+                type: 'button',
+                action: { type: 'message', label: '❌ 最初からやり直す', text: '確認:no' },
+                style: 'link',
+                color: '#aaaaaa',
+                margin: 'sm'
+              }
+            ],
+            margin: 'xl'
+          }
+        ]
+      }
+    }
   };
 }
 
