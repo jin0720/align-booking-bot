@@ -147,13 +147,12 @@ function buildDurationMessage(menuName) {
   };
 }
 
-/** 日付選択 (クイックリプライ: 今日〜7日間) */
+/** 日付選択 Flex Message */
 function buildDateMessage() {
-  const items = [];
   const now = new Date();
   const days = ['日', '月', '火', '水', '木', '金', '土'];
+  const dateOptions = [];
 
-  // i=0 が今日、i=1〜6 が翌日以降 (計7日分)
   for (let i = 0; i <= 6; i++) {
     const d = new Date(now);
     d.setDate(now.getDate() + i);
@@ -161,15 +160,57 @@ function buildDateMessage() {
     const m  = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     const dateStr = `${y}-${m}-${dd}`;
-    // 今日は「今日」ラベルを追加
     const dayLabel = i === 0 ? '今日' : `${d.getMonth()+1}/${d.getDate()}(${days[d.getDay()]})`;
-    items.push({ type: 'action', action: { type: 'message', label: dayLabel, text: `日付:${dateStr}` } });
+    dateOptions.push({ label: dayLabel, value: dateStr });
+  }
+
+  // 1行に2つボタンを並べる
+  const rows = [];
+  for (let i = 0; i < dateOptions.length; i += 2) {
+    const chunk = dateOptions.slice(i, i + 2);
+    rows.push({
+      type: 'box',
+      layout: 'horizontal',
+      contents: chunk.map(d => ({
+        type: 'button',
+        action: { type: 'message', label: d.label, text: `日付:${d.value}` },
+        style: 'primary',
+        color: '#8C7A6B',
+        height: 'sm',
+        margin: 'xs'
+      })),
+      margin: 'md'
+    });
   }
 
   return {
-    type: 'text',
-    text: '📅 ご希望の日付を選択するか、直接入力してください\n（例：「今日」「5/15」）',
-    quickReply: { items },
+    type: 'flex',
+    altText: '日付を選択してください',
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          { type: 'text', text: '📅 日付選択', weight: 'bold', size: 'lg', color: '#ffffff' }
+        ],
+        backgroundColor: '#8C7A6B'
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          { type: 'text', text: 'ご希望の日付を選択してください', size: 'sm', color: '#666666' },
+          { type: 'box', layout: 'vertical', contents: rows, margin: 'lg' }
+        ]
+      }
+    },
+    quickReply: {
+      items: dateOptions.map(d => ({
+        type: 'action',
+        action: { type: 'message', label: d.label, text: `日付:${d.value}` }
+      }))
+    }
   };
 }
 
