@@ -113,23 +113,14 @@ function buildDurationMessage(menuName) {
     value: key
   }));
 
-  const rows = [];
-  for (let i = 0; i < durations.length; i += 2) {
-    const chunk = durations.slice(i, i + 2);
-    rows.push({
-      type: 'box',
-      layout: 'horizontal',
-      contents: chunk.map(d => ({
-        type: 'button',
-        action: { type: 'message', label: d.label, text: `時間:${d.value}` },
-        style: 'primary',
-        color: '#8C7A6B',
-        height: 'sm',
-        margin: 'xs'
-      })),
-      margin: 'md'
-    });
-  }
+  const rows = durations.map(d => ({
+    type: 'button',
+    action: { type: 'message', label: d.label, text: `時間:${d.value}` },
+    style: 'primary',
+    color: '#8C7A6B',
+    height: 'sm',
+    margin: 'md'
+  }));
 
   return {
     type: 'flex',
