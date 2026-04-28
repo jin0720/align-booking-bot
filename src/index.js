@@ -57,4 +57,18 @@ app.listen(PORT, async () => {
   } else {
     console.warn('⚠️  Google Sheets の環境変数が未設定です (.env を確認)');
   }
+
+  // Render.com 無料プランのスリープ防止（14分ごとに自己ping）
+  const SELF_URL = process.env.RENDER_EXTERNAL_URL;
+  if (SELF_URL) {
+    setInterval(async () => {
+      try {
+        await fetch(SELF_URL);
+        console.log('💓 Keep-alive OK');
+      } catch (err) {
+        console.error('💓 Keep-alive failed:', err.message);
+      }
+    }, 14 * 60 * 1000);
+    console.log(`💓 Keep-alive 起動 (14分ごとに ${SELF_URL} をping)`);
+  }
 });
