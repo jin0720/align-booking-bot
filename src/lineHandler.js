@@ -10,14 +10,21 @@ const userQueues = new Map();
  * @param {object} client LINE Messaging API クライアント
  */
 async function handleEvent(event, client) {
-  // テキストメッセージ以外は無視
-  if (event.type !== 'message' || event.message.type !== 'text') return null;
+  let userId, text, replyToken;
 
-  const userId     = event.source.userId;
-  const text       = event.message.text.trim();
-  const replyToken = event.replyToken;
-
-  console.log(`📩 [${userId}] 受信: "${text}" (長さ: ${text.length})`);
+  if (event.type === 'message' && event.message.type === 'text') {
+    userId     = event.source.userId;
+    text       = event.message.text.trim();
+    replyToken = event.replyToken;
+    console.log(`📩 [${userId}] 受信: "${text}" (長さ: ${text.length})`);
+  } else if (event.type === 'postback' && event.postback.data === 'action=select_date') {
+    userId     = event.source.userId;
+    text       = `日付:${event.postback.params.date}`;
+    replyToken = event.replyToken;
+    console.log(`📅 [${userId}] 日付選択: ${event.postback.params.date}`);
+  } else {
+    return null;
+  }
 
   // 同一ユーザーのメッセージを直列処理する（前のメッセージ処理が終わるまで待つ）
   const prev = userQueues.get(userId) ?? Promise.resolve();
