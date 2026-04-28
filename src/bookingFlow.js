@@ -156,15 +156,42 @@ function buildDurationMessage(menuName) {
   };
 }
 
-/** 日付選択 Flex Message（datetimepicker） */
+/** 日付選択 Flex Message（当日〜6日後のボタン + datetimepicker） */
 function buildDateMessage() {
   const jstNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+  const days = ['日', '月', '火', '水', '木', '金', '土'];
   const fmt = (d) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${dd}`;
   };
+
+  // 当日〜6日後の日付ボタン（2列レイアウト）
+  const dateOptions = [];
+  for (let i = 0; i <= 6; i++) {
+    const d = new Date(jstNow);
+    d.setDate(jstNow.getDate() + i);
+    const label = i === 0 ? '今日' : `${d.getMonth() + 1}/${d.getDate()}(${days[d.getDay()]})`;
+    dateOptions.push({ label, value: fmt(d) });
+  }
+
+  const rows = [];
+  for (let i = 0; i < dateOptions.length; i += 2) {
+    const chunk = dateOptions.slice(i, i + 2);
+    rows.push({
+      type: 'box',
+      layout: 'horizontal',
+      spacing: 'sm',
+      contents: chunk.map(d => ({
+        type: 'button',
+        action: { type: 'message', label: d.label, text: `日付:${d.value}` },
+        style: 'primary',
+        color: '#8C7A6B'
+      }))
+    });
+  }
+
   const maxDate = new Date(jstNow);
   maxDate.setMonth(maxDate.getMonth() + 3);
 
@@ -184,16 +211,19 @@ function buildDateMessage() {
       body: {
         type: 'box',
         layout: 'vertical',
-        spacing: 'md',
+        spacing: 'sm',
         contents: [
           { type: 'text', text: 'ご希望の日付を選択してください', size: 'sm', color: '#666666', wrap: true },
+          { type: 'box', layout: 'vertical', spacing: 'sm', contents: rows },
+          { type: 'separator', margin: 'md' },
           {
             type: 'button',
-            style: 'primary',
+            style: 'secondary',
             color: '#8C7A6B',
+            margin: 'md',
             action: {
               type: 'datetimepicker',
-              label: '日付を選ぶ',
+              label: '日付を選ぶ（カレンダー）',
               data: 'action=select_date',
               mode: 'date',
               initial: fmt(jstNow),
