@@ -169,7 +169,7 @@ function buildDateMessage() {
 
   // 当日〜6日後の日付ボタン（2列レイアウト）
   const dateOptions = [];
-  for (let i = 0; i <= 6; i++) {
+  for (let i = 0; i <= 5; i++) {
     const d = new Date(jstNow);
     d.setDate(jstNow.getDate() + i);
     const label = i === 0 ? '今日' : `${d.getMonth() + 1}/${d.getDate()}(${days[d.getDay()]})`;
@@ -218,7 +218,7 @@ function buildDateMessage() {
           { type: 'separator', margin: 'md' },
           {
             type: 'button',
-            style: 'secondary',
+            style: 'primary',
             color: '#8C7A6B',
             margin: 'md',
             action: {
