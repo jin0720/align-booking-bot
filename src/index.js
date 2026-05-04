@@ -57,6 +57,15 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log(`🚀 LINE Booking Bot started on port ${PORT}`);
 
+  // LINE 環境変数チェック（通知が届かない場合の診断用）
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const secret = process.env.LINE_CHANNEL_SECRET;
+  const ownerId = process.env.OWNER_LINE_USER_ID;
+  console.log(`🔑 LINE_CHANNEL_ACCESS_TOKEN: ${token ? `設定済み (${token.length}文字)` : '❌ 未設定'}`);
+  console.log(`🔑 LINE_CHANNEL_SECRET: ${secret ? `設定済み (${secret.length}文字)` : '❌ 未設定'}`);
+  console.log(`👤 OWNER_LINE_USER_ID: ${ownerId || '❌ 未設定'}`);
+
+
   // Google Sheetsのヘッダー初期化
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON && process.env.GOOGLE_SPREADSHEET_ID) {
     try {
