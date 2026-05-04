@@ -21,9 +21,6 @@ const client = new messagingApi.MessagingApiClient({
 // ── Expressアプリ設定 ────────────────────────────────────────
 const app = express();
 
-// JSON パースミドルウェア
-app.use(express.json());
-
 // CORS ミドルウェア
 app.use(corsMiddleware);
 
@@ -32,8 +29,8 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'LINE Booking Bot is running! 🌿' });
 });
 
-// REST API ルート（Mini App 用）
-app.use('/api', createApiRoutes(client));
+// REST API ルート（Mini App 用）— JSON解析はここだけに適用
+app.use('/api', express.json(), createApiRoutes(client));
 
 // LINE Webhook エンドポイント
 app.post(
