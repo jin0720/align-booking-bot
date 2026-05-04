@@ -48,9 +48,10 @@ async function handleEvent(event, client) {
         text = mapped;
         console.log(`📲 [${userId}] postback → "${data}" → テキスト: "${text}"`);
       } else {
-        // 未知のpostback: データをそのままテキストとして試す（デバッグ用にログ出力）
-        console.warn(`⚠️ [${userId}] 未知のpostbackデータ: "${data}" — マッピングを追加してください`);
-        return null;
+        // 未知のpostback: データをそのままテキストとして handleBookingFlow に渡す
+        // → "予約確認" など直接キーワードになっている場合に対応できる
+        text = data;
+        console.warn(`⚠️ [${userId}] 未知のpostbackデータ: "${data}" — テキストとして処理を試みます`);
       }
     }
 

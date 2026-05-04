@@ -143,11 +143,19 @@ function createApiRoutes(lineClient) {
       const endTime = await saveBooking({ date, time, menu, duration, name, userId });
 
       // LINE確認メッセージをお客様に push 送信
-      if (lineClient && userId && !userId.startsWith('demo')) {
+      if (!lineClient) {
+        console.warn('⚠️ LINE通知スキップ: lineClient が未初期化です（LINE_CHANNEL_ACCESS_TOKEN を確認）');
+      } else if (!userId || userId.startsWith('demo')) {
+        console.warn(`⚠️ LINE通知スキップ: userId が不正です ("${userId}") — LIFF未初期化の可能性あり`);
+      } else {
         const confirmMsg = buildBookingConfirmMessage({ date, time, endTime, menu, duration, name });
         lineClient.pushMessage({ to: userId, messages: [confirmMsg] })
           .then(() => console.log(`✅ [${userId}] 予約確認メッセージ送信完了`))
-          .catch(err => console.error('LINE予約確認送信失敗:', err.message));
+          .catch(err => {
+            console.error(`❌ LINE予約確認送信失敗 [${userId}]:`, err.message);
+            const detail = err?.originalError?.response?.data ?? err?.response?.data;
+            if (detail) console.error('  LINE API エラー詳細:', JSON.stringify(detail));
+          });
 
         // オーナーにも通知
         notifyOwner(lineClient, { date, time, endTime, menu, duration, name });
