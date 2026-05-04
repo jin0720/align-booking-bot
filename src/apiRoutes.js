@@ -144,11 +144,13 @@ function createApiRoutes(lineClient) {
       const endTime = await saveBooking({ date, time, menu, duration, name, userId });
 
       // LINE確認メッセージをお客様に push 送信
+      console.log(`📬 LINE通知フロー開始 — userId: "${userId}", lineClient: ${lineClient ? 'あり' : 'なし (null)'}`);
       if (!lineClient) {
         console.warn('⚠️ LINE通知スキップ: lineClient が未初期化です（LINE_CHANNEL_ACCESS_TOKEN を確認）');
       } else if (!userId || userId.startsWith('demo')) {
         console.warn(`⚠️ LINE通知スキップ: userId が不正です ("${userId}") — LIFF未初期化の可能性あり`);
       } else {
+        console.log(`📤 [${userId}] pushMessage 送信中...`);
         const confirmMsg = buildBookingConfirmMessage({ date, time, endTime, menu, duration, name });
         lineClient.pushMessage({ to: userId, messages: [confirmMsg] })
           .then(() => console.log(`✅ [${userId}] 予約確認メッセージ送信完了`))
