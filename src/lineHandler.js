@@ -4,10 +4,24 @@ const { handleBookingFlow } = require('./bookingFlow');
 // ユーザーごとのメッセージ処理キュー（並行処理による競合を防ぐ）
 const userQueues = new Map();
 
+// postbackデータ → 予約フロー用テキストのマッピング
+// LINE コンソールのリッチメニュー設定に合わせて追加・変更してください
+const POSTBACK_TEXT_MAP = {
+  // 予約確認・変更・キャンセル系（リッチメニューボタン）
+  'action=check_reservation':       '予約の確認・変更・キャンセル',
+  'action=check_reservations':      '予約の確認・変更・キャンセル',
+  'action=reservation_check':       '予約の確認・変更・キャンセル',
+  'action=reservation_list':        '予約の確認・変更・キャンセル',
+  'action=my_reservations':         '予約の確認・変更・キャンセル',
+  'action=cancel_reservation':      '予約の確認・変更・キャンセル',
+  // 新規予約系
+  'action=new_booking':             'マッサージ予約',
+  'action=booking':                 'マッサージ予約',
+  'action=start_booking':           'マッサージ予約',
+};
+
 /**
  * LINE Webhookイベント1件を処理する
- * @param {object} event  LINE SDK のイベントオブジェクト
- * @param {object} client LINE Messaging API クライアント
  */
 async function handleEvent(event, client) {
   let userId, text, replyToken;
@@ -17,19 +31,37 @@ async function handleEvent(event, client) {
     text       = event.message.text.trim();
     replyToken = event.replyToken;
     console.log(`📩 [${userId}] 受信: "${text}" (長さ: ${text.length})`);
-  } else if (event.type === 'postback' && event.postback.data === 'action=select_date') {
+
+  } else if (event.type === 'postback') {
     userId     = event.source.userId;
-    text       = `日付:${event.postback.params.date}`;
     replyToken = event.replyToken;
-    console.log(`📅 [${userId}] 日付選択: ${event.postback.params.date}`);
+    const data = event.postback.data || '';
+
+    if (data === 'action=select_date') {
+      // datetimepicker からの日付選択
+      text = `日付:${event.postback.params.date}`;
+      console.log(`📅 [${userId}] 日付選択 (postback): ${event.postback.params.date}`);
+    } else {
+      // その他のpostback: マッピング表で変換
+      const mapped = POSTBACK_TEXT_MAP[data];
+      if (mapped) {
+        text = mapped;
+        console.log(`📲 [${userId}] postback → "${data}" → テキスト: "${text}"`);
+      } else {
+        // 未知のpostback: データをそのままテキストとして試す（デバッグ用にログ出力）
+        console.warn(`⚠️ [${userId}] 未知のpostbackデータ: "${data}" — マッピングを追加してください`);
+        return null;
+      }
+    }
+
   } else {
     return null;
   }
 
-  // 同一ユーザーのメッセージを直列処理する（前のメッセージ処理が終わるまで待つ）
+  // 同一ユーザーのメッセージを直列処理する
   const prev = userQueues.get(userId) ?? Promise.resolve();
   const task = prev.then(() => _processMessage(userId, text, replyToken, client));
-  userQueues.set(userId, task.catch(() => {})); // エラーで後続がブロックされないよう catch
+  userQueues.set(userId, task.catch(() => {}));
   return task;
 }
 
@@ -50,13 +82,11 @@ async function _processMessage(userId, text, replyToken, client) {
 
   const toSend = messages.slice(0, 5);
 
-  // まず replyMessage を試みる（replyToken が有効な場合）
   try {
     console.log(`📤 [${userId}] 返信送信中 (replyMessage)`);
     await client.replyMessage({ replyToken, messages: toSend });
     console.log(`✅ [${userId}] 返信送信完了`);
   } catch (replyErr) {
-    // replyToken 期限切れ（コールドスタート等）の場合は pushMessage にフォールバック
     console.warn(`⚠️ [${userId}] replyMessage 失敗 (${replyErr.message}) → pushMessage にフォールバック`);
     try {
       await client.pushMessage({ to: userId, messages: toSend });

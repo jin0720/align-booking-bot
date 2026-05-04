@@ -5,7 +5,7 @@ const express = require('express');
 const { middleware, messagingApi } = require('@line/bot-sdk');
 const { handleEvent } = require('./lineHandler');
 const { ensureHeaders } = require('./sheetsService');
-const apiRoutes = require('./apiRoutes');
+const createApiRoutes = require('./apiRoutes');
 const { corsMiddleware } = require('./authMiddleware');
 
 // ── LINE クライアント初期化 ──────────────────────────────────
@@ -33,7 +33,7 @@ app.get('/', (req, res) => {
 });
 
 // REST API ルート（Mini App 用）
-app.use('/api', apiRoutes);
+app.use('/api', createApiRoutes(client));
 
 // LINE Webhook エンドポイント
 app.post(
