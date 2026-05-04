@@ -38,7 +38,9 @@ app.use('/api', createApiRoutes(client));
 // LINE Webhook エンドポイント
 app.post(
   '/webhook',
-  middleware({ channelSecret: lineConfig.channelSecret }),
+  (req, res, next) => {
+    middleware({ channelSecret: lineConfig.channelSecret })(req, res, next);
+  },
   (req, res) => {
     // LINE の仕様: 200 を先に返してからイベント処理
     res.status(200).json({ status: 'ok' });
@@ -50,6 +52,16 @@ app.post(
       .catch(err => console.error('イベント処理エラー:', err));
   }
 );
+
+// LINE署名検証失敗 → 401、その他エラー → 500
+app.use((err, req, res, next) => {
+  if (err.name === 'SignatureValidationFailed') {
+    console.error('❌ 署名検証失敗 — LINE_CHANNEL_SECRET が正しいか確認してください');
+    return res.status(401).json({ error: 'signature validation failed' });
+  }
+  console.error('❌ サーバーエラー:', err.message);
+  res.status(500).json({ error: 'internal server error' });
+});
 
 // ── サーバー起動 ─────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
