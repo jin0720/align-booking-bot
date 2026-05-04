@@ -5,6 +5,8 @@ const express = require('express');
 const { middleware, messagingApi } = require('@line/bot-sdk');
 const { handleEvent } = require('./lineHandler');
 const { ensureHeaders } = require('./sheetsService');
+const apiRoutes = require('./apiRoutes');
+const { corsMiddleware } = require('./authMiddleware');
 
 // ── LINE クライアント初期化 ──────────────────────────────────
 const lineConfig = {
@@ -19,10 +21,19 @@ const client = new messagingApi.MessagingApiClient({
 // ── Expressアプリ設定 ────────────────────────────────────────
 const app = express();
 
+// JSON パースミドルウェア
+app.use(express.json());
+
+// CORS ミドルウェア
+app.use(corsMiddleware);
+
 // ヘルスチェック
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'LINE Booking Bot is running! 🌿' });
 });
+
+// REST API ルート（Mini App 用）
+app.use('/api', apiRoutes);
 
 // LINE Webhook エンドポイント
 app.post(
