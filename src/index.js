@@ -14,9 +14,10 @@ const lineConfig = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
 };
 
-const client = new messagingApi.MessagingApiClient({
-  channelAccessToken: lineConfig.channelAccessToken,
-});
+// トークン未設定時は null にして、後続の !lineClient ガードを正しく機能させる
+const client = lineConfig.channelAccessToken
+  ? new messagingApi.MessagingApiClient({ channelAccessToken: lineConfig.channelAccessToken })
+  : null;
 
 // ── Expressアプリ設定 ────────────────────────────────────────
 const app = express();
@@ -73,6 +74,19 @@ app.listen(PORT, async () => {
   console.log(`🔑 LINE_CHANNEL_ACCESS_TOKEN: ${token ? `設定済み (${token.length}文字)` : '❌ 未設定'}`);
   console.log(`🔑 LINE_CHANNEL_SECRET: ${secret ? `設定済み (${secret.length}文字)` : '❌ 未設定'}`);
   console.log(`👤 OWNER_LINE_USER_ID: ${ownerId || '❌ 未設定'}`);
+
+  // LINE Bot 接続確認（トークンの有効性をチェック）
+  if (client) {
+    client.getBotInfo()
+      .then(info => console.log(`✅ LINE Bot 接続OK: ${info.displayName} (${info.basicId})`))
+      .catch(err => {
+        console.error(`❌ LINE Bot 接続失敗: ${err.message}`);
+        if (err.rawBody) console.error('  LINE API エラー詳細:', err.rawBody);
+        console.error('  → Render.com の LINE_CHANNEL_ACCESS_TOKEN を確認してください');
+      });
+  } else {
+    console.error('❌ LINE クライアント未初期化 — LINE_CHANNEL_ACCESS_TOKEN が未設定のため通知は送信されません');
+  }
 
 
   // Google Sheetsのヘッダー初期化

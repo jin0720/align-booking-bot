@@ -64,6 +64,7 @@ async function notifyOwner(client, { date, time, endTime, menu, duration, name }
     console.log('🔔 オーナーへ通知送信完了');
   } catch (err) {
     console.error('オーナー通知失敗:', err.message);
+    if (err.rawBody) console.error('  LINE API エラー詳細:', err.rawBody);
   }
 }
 
@@ -153,8 +154,11 @@ function createApiRoutes(lineClient) {
           .then(() => console.log(`✅ [${userId}] 予約確認メッセージ送信完了`))
           .catch(err => {
             console.error(`❌ LINE予約確認送信失敗 [${userId}]:`, err.message);
-            const detail = err?.originalError?.response?.data ?? err?.response?.data;
-            if (detail) console.error('  LINE API エラー詳細:', JSON.stringify(detail));
+            // @line/bot-sdk v9 (fetch ベース) のエラー詳細
+            if (err.rawBody) console.error('  LINE API エラー詳細:', err.rawBody);
+            // @line/bot-sdk v7/v8 (axios ベース) のフォールバック
+            const legacyDetail = err?.originalError?.response?.data ?? err?.response?.data;
+            if (legacyDetail) console.error('  LINE API エラー詳細:', JSON.stringify(legacyDetail));
           });
 
         // オーナーにも通知

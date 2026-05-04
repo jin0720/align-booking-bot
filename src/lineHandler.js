@@ -67,6 +67,11 @@ async function handleEvent(event, client) {
 }
 
 async function _processMessage(userId, text, replyToken, client) {
+  if (!client) {
+    console.error(`❌ [${userId}] LINE client 未初期化のため返信できません`);
+    return;
+  }
+
   let messages;
 
   try {
