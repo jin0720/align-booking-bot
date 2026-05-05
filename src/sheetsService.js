@@ -318,10 +318,16 @@ async function cancelBooking({ rowIndex, date, time, name }) {
     });
 
     const events = res.data.items || [];
-    // 完全に一致するものを探す
-    const targetEvent = events.find(e => 
-      e.summary.includes(name) && 
-      e.start.dateTime.startsWith(`${date}T${time}`)
+    // Google CalendarはUTC形式(Z)で返すこともあるためJSTに変換して比較
+    const toJSTDateTimeStr = (dt) => {
+      const d = new Date(dt);
+      return d.toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).replace(' ', 'T').substring(0, 16);
+    };
+    const expectedPrefix = `${date}T${time}`;
+    const targetEvent = events.find(e =>
+      e.summary && e.summary.includes(name) &&
+      e.start && e.start.dateTime &&
+      toJSTDateTimeStr(e.start.dateTime) === expectedPrefix
     );
 
     if (targetEvent) {
