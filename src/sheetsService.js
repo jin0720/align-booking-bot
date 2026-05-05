@@ -306,28 +306,34 @@ async function cancelBooking({ rowIndex, date, time, name }) {
   // 2. Googleカレンダーから削除
   try {
     const calendar = await getCalendar();
-    const timeMin = `${date}T${time}:00+09:00`;
-    const timeMax = `${date}T${time}:01+09:00`; // ほぼピンポイントで検索
+    // 当日全体を検索（1秒窓やqパラメータは不安定なため、getCalendarEventsと同じ方式）
+    const timeMin = `${date}T00:00:00+09:00`;
+    const timeMax = `${date}T23:59:59+09:00`;
 
     const res = await calendar.events.list({
       calendarId: config.CALENDAR_ID,
       timeMin,
       timeMax,
-      q: name, // 名前で絞り込み
       singleEvents: true,
+      orderBy: 'startTime',
     });
 
     const events = res.data.items || [];
-    // Google CalendarはUTC形式(Z)で返すこともあるためJSTに変換して比較
-    const toJSTDateTimeStr = (dt) => {
+    console.log(`🔍 [cancelBooking] ${date} のカレンダーイベント ${events.length} 件を検索中 (対象: ${time} ${name}様)`);
+    events.forEach(e => {
+      console.log(`  - summary: "${e.summary}" start: "${e.start?.dateTime || e.start?.date}"`);
+    });
+
+    // Google CalendarはUTC(Z)で返すことがあるのでJSTに変換して比較
+    const toJSTStr = (dt) => {
       const d = new Date(dt);
       return d.toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).replace(' ', 'T').substring(0, 16);
     };
-    const expectedPrefix = `${date}T${time}`;
+    const expectedStart = `${date}T${time}`;
     const targetEvent = events.find(e =>
       e.summary && e.summary.includes(name) &&
       e.start && e.start.dateTime &&
-      toJSTDateTimeStr(e.start.dateTime) === expectedPrefix
+      toJSTStr(e.start.dateTime) === expectedStart
     );
 
     if (targetEvent) {
@@ -335,9 +341,9 @@ async function cancelBooking({ rowIndex, date, time, name }) {
         calendarId: config.CALENDAR_ID,
         eventId: targetEvent.id,
       });
-      console.log(`✅ カレンダーイベント削除完了: ${targetEvent.id}`);
+      console.log(`✅ カレンダーイベント削除完了: "${targetEvent.summary}" (${targetEvent.id})`);
     } else {
-      console.warn(`⚠️ キャンセル対象のカレンダーイベントが見つかりませんでした (${date} ${time} ${name})`);
+      console.warn(`⚠️ キャンセル対象のカレンダーイベントが見つかりませんでした。expectedStart="${expectedStart}", name="${name}"`);
     }
   } catch (err) {
     console.error('⚠️ カレンダー削除失敗:', err.message);
