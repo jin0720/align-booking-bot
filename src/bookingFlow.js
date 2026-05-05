@@ -658,16 +658,42 @@ async function handleBookingFlow(userId, text, client) {
     return buildWelcomeMessages();
   }
 
-  // ── 予約キャンセル・確認開始トリガー ──────────────────────────────────
+  // ── 予約キャンセル・確認開始トリガー → LIFFミニアプリに誘導 ───────────
   if (isReservationCancelTriggered(text) || LIST_RESERVATIONS_KEYWORDS.some(k => text.includes(k))) {
-    try {
-      const reservations = await getUserReservations(userId);
-      setSession(userId, { step: 'cancel_exec', userReservations: reservations });
-      return buildReservationListMessage(reservations);
-    } catch (err) {
-      console.error('予約一覧取得失敗:', err);
-      return [{ type: 'text', text: '予約情報の取得に失敗しました。' }];
-    }
+    return [
+      {
+        type: 'flex',
+        altText: '予約の確認・変更・キャンセル',
+        contents: {
+          type: 'bubble',
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'md',
+            contents: [
+              { type: 'text', text: '📅 予約の確認・変更・キャンセル', weight: 'bold', size: 'md' },
+              { type: 'text', text: 'ミニアプリで予約一覧を確認できます。\n日時変更は一度キャンセル後、再度ご予約ください。', size: 'sm', color: '#666666', wrap: true, margin: 'md' },
+            ],
+          },
+          footer: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'button',
+                action: {
+                  type: 'uri',
+                  label: '予約確認・キャンセルはこちら',
+                  uri: 'https://liff.line.me/2009962690-j5dQBfYL?view=history',
+                },
+                style: 'primary',
+                color: '#557A64',
+              },
+            ],
+          },
+        },
+      },
+    ];
   }
 
   // ── キャンセル処理 (セッションのリセット) ──────────────────────────
