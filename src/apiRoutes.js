@@ -39,7 +39,7 @@ function buildBookingConfirmMessage({ date, time, endTime, menu, duration, name 
 }
 
 /** オーナー向けキャンセル通知 */
-async function notifyOwnerCancellation(client, { date, time, endTime, menu, name }) {
+async function notifyOwnerCancellation(client, { date, time, endTime, menu, duration, name }) {
   const ownerId = config.OWNER_LINE_USER_ID;
   if (!ownerId || !client) return;
   const menuName = config.MENUS[menu] || menu || '';
@@ -53,6 +53,7 @@ async function notifyOwnerCancellation(client, { date, time, endTime, menu, name
           `❌ 予約がキャンセルされました。\n\n` +
           `👤 ${name} 様\n` +
           (menuName ? `📋 ${menuName}\n` : '') +
+          (duration ? `⏱ ${duration}分コース\n` : '') +
           `📅 ${dateJP}\n` +
           `🕐 ${time}${endTime ? `〜${endTime}` : ''}`
         ),
@@ -229,7 +230,7 @@ function createApiRoutes(lineClient) {
   router.delete('/bookings/:rowIndex', async (req, res) => {
     try {
       const { rowIndex } = req.params;
-      const { date, time, endTime, menu, name } = req.body;
+      const { date, time, endTime, menu, duration, name } = req.body;
 
       if (!date || !time || !name) {
         return res.status(400).json({ error: '日付、時間、名前が必須です' });
@@ -239,7 +240,7 @@ function createApiRoutes(lineClient) {
       res.json({ success: true, message: '予約がキャンセルされました' });
 
       // オーナーへキャンセル通知（レスポンス後に非同期で送信）
-      notifyOwnerCancellation(lineClient, { date, time, endTime, menu, name }).catch(() => {});
+      notifyOwnerCancellation(lineClient, { date, time, endTime, menu, duration, name }).catch(() => {});
     } catch (error) {
       console.error('予約キャンセルエラー:', error);
       res.status(500).json({ error: '予約のキャンセルに失敗しました' });
