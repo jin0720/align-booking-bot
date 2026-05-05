@@ -33,6 +33,7 @@ const TRIGGER_KEYWORDS = ['マッサージ予約', 'マッサージ予約（自�
 const CANCEL_KEYWORDS = ['キャンセル', 'やめる', 'やめ', 'cancel', '最初から', 'やり直し', 'リセット'];
 const LIST_RESERVATIONS_KEYWORDS = ['予約表示', '予約確認', '予約一覧', '予約の確認・変更・キャンセル', '予約の確認・変更', '変更・キャンセル'];
 const CANCEL_RESERVATION_KEYWORDS = ['予約キャンセル', '予約のキャンセル', 'キャンセルしたい'];
+const TRAINING_KEYWORDS = ['トレーニングお問い合わせ', 'トレーニング予約', 'パーソナルトレーニング', 'トレーニング'];
 
 function isTriggered(text) {
   return TRIGGER_KEYWORDS.some(k => text === k);
@@ -656,6 +657,22 @@ async function handleBookingFlow(userId, text, client) {
     clearSession(userId);
     setSession(userId, { step: 'menu_select' });
     return buildWelcomeMessages();
+  }
+
+  // ── トレーニングお問い合わせ ─────────────────────────────────────────
+  if (TRAINING_KEYWORDS.some(k => text.includes(k))) {
+    let displayName = '';
+    try {
+      const profile = await client.getProfile(userId);
+      displayName = profile.displayName || '';
+    } catch (e) {
+      console.error('トレーニング問い合わせ時のプロフィール取得失敗:', e.message);
+    }
+    const greeting = displayName ? `${displayName}さん、` : '';
+    return [{
+      type: 'text',
+      text: `${greeting}お問い合わせありがとうございます！\n\nパーソナルトレーニングはレンタルジム(完全個室)にて実施しています。\n\n「運動が久しぶり」\n「何をしたらいいかわからない」\n「筋肉をつけたいけど、何から始めればいいかわからない」\nという方も多いので、まずは気軽にご相談ください。\n\n身体や目的に合わせて、無理なく続けられる内容をご提案します😊`,
+    }];
   }
 
   // ── 予約キャンセル・確認開始トリガー → LIFFミニアプリに誘導 ───────────
