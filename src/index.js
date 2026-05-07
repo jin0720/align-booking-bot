@@ -4,7 +4,7 @@ require('dotenv').config();
 const express = require('express');
 const { middleware, messagingApi } = require('@line/bot-sdk');
 const { handleEvent } = require('./lineHandler');
-const { ensureHeaders, deleteCancelledRows, backfillPrices } = require('./sheetsService');
+const { ensureHeaders, deleteCancelledRows, backfillPrices, ensureGoalSheet } = require('./sheetsService');
 const createApiRoutes = require('./apiRoutes');
 const { corsMiddleware } = require('./authMiddleware');
 
@@ -98,6 +98,7 @@ app.listen(PORT, async () => {
       console.error('⚠️  Google Sheets 接続エラー (設定を確認してください):', err.message);
     }
 
+    await ensureGoalSheet();
     await backfillPrices();
     await deleteCancelledRows();
 

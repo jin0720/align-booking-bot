@@ -458,4 +458,37 @@ async function backfillPrices() {
   }
 }
 
-module.exports = { getAvailableSlots, saveBooking, ensureHeaders, getUserReservations, cancelBooking, deleteCancelledRows, backfillPrices };
+/** 「目標設定シート」がなければ作成してヘッダーを追加 */
+async function ensureGoalSheet() {
+  try {
+    const sheets = await getSheets();
+    const GOAL_SHEET = '目標設定シート';
+
+    const res = await sheets.spreadsheets.get({
+      spreadsheetId: config.SPREADSHEET_ID,
+    });
+    const exists = res.data.sheets.some(
+      s => s.properties.title === GOAL_SHEET
+    );
+
+    if (!exists) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: config.SPREADSHEET_ID,
+        requestBody: {
+          requests: [{ addSheet: { properties: { title: GOAL_SHEET } } }],
+        },
+      });
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: config.SPREADSHEET_ID,
+        range: `${GOAL_SHEET}!A1`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [['月', '月間目標金額']] },
+      });
+      console.log('✅ 目標設定シートを作成しました');
+    }
+  } catch (err) {
+    console.error('❌ [ensureGoalSheet] 失敗:', err.message);
+  }
+}
+
+module.exports = { getAvailableSlots, saveBooking, ensureHeaders, getUserReservations, cancelBooking, deleteCancelledRows, backfillPrices, ensureGoalSheet };
