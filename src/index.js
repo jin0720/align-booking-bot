@@ -4,7 +4,7 @@ require('dotenv').config();
 const express = require('express');
 const { middleware, messagingApi } = require('@line/bot-sdk');
 const { handleEvent } = require('./lineHandler');
-const { ensureHeaders } = require('./sheetsService');
+const { ensureHeaders, deleteCancelledRows, backfillPrices } = require('./sheetsService');
 const createApiRoutes = require('./apiRoutes');
 const { corsMiddleware } = require('./authMiddleware');
 
@@ -97,6 +97,12 @@ app.listen(PORT, async () => {
     } catch (err) {
       console.error('⚠️  Google Sheets 接続エラー (設定を確認してください):', err.message);
     }
+
+    await backfillPrices();
+    await deleteCancelledRows();
+
+    setInterval(deleteCancelledRows, 24 * 60 * 60 * 1000);
+    console.log('🗑️ キャンセル自動削除スケジュール設定完了 (24時間ごと)');
   } else {
     console.warn('⚠️  Google Sheets の環境変数が未設定です (.env を確認)');
   }

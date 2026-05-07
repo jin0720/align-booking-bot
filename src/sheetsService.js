@@ -128,15 +128,27 @@ async function ensureHeaders() {
   const sheets = await getSheets();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.SPREADSHEET_ID,
-    range: `${config.SHEET_NAME}!A1:I1`,
+    range: `${config.SHEET_NAME}!A1:J1`,
   });
-  if (!res.data.values || res.data.values.length === 0) {
+  const headerRow = res.data.values?.[0] || [];
+  if (!headerRow[0]) {
+    // 新規シート: 全ヘッダーを書き込む
     await sheets.spreadsheets.values.update({
       spreadsheetId: config.SPREADSHEET_ID,
       range: `${config.SHEET_NAME}!A1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [['日付', '開始時間', '終了時間', 'メニュー', '時間（分）', 'お名前', 'LINE UserID', '予約日時', 'ステータス']],
+        values: [['日付', '開始時間', '終了時間', 'メニュー', '時間（分）', 'お名前', 'LINE UserID', '予約日時', 'ステータス', '料金']],
+      },
+    });
+  } else if (!headerRow[9]) {
+    // 既存シートにJ1（料金）だけ追加
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.SPREADSHEET_ID,
+      range: `${config.SHEET_NAME}!J1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [['料金']],
       },
     });
   }
@@ -216,13 +228,14 @@ async function saveBooking({ date, time, menu, duration, name, userId }) {
   const endTime    = minutesToTime(endMinutes);
   const menuName   = config.MENUS[menu] || menu;
   const now        = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+  const price      = config.PRICES[parseInt(duration)]?.discounted ?? '';
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: config.SPREADSHEET_ID,
-    range: `${config.SHEET_NAME}!A:I`,
+    range: `${config.SHEET_NAME}!A:J`,
     valueInputOption: 'USER_ENTERED',
     requestBody: {
-      values: [[date, time, endTime, menuName, duration, name, userId, now, '確定']],
+      values: [[date, time, endTime, menuName, duration, name, userId, now, '確定', price]],
     },
   });
 
@@ -350,4 +363,99 @@ async function cancelBooking({ rowIndex, date, time, name }) {
   }
 }
 
-module.exports = { getAvailableSlots, saveBooking, ensureHeaders, getUserReservations, cancelBooking };
+/** シートID（gid）を取得 */
+async function getSheetId() {
+  const sheets = await getSheets();
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId: config.SPREADSHEET_ID,
+  });
+  const sheet = res.data.sheets.find(
+    s => s.properties.title === config.SHEET_NAME
+  );
+  if (!sheet) throw new Error(`シート "${config.SHEET_NAME}" が見つかりません`);
+  return sheet.properties.sheetId;
+}
+
+/** キャンセル済み予約行をスプレッドシートから削除 */
+async function deleteCancelledRows() {
+  try {
+    const sheets = await getSheets();
+    const sheetId = await getSheetId();
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.SPREADSHEET_ID,
+      range: `${config.SHEET_NAME}!A:I`,
+    });
+    const rows = res.data.values || [];
+
+    const cancelledIndices = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i]?.[8] === 'キャンセル') cancelledIndices.push(i);
+    }
+    if (cancelledIndices.length === 0) {
+      console.log('🗑️ 削除対象のキャンセル済み予約はありません');
+      return;
+    }
+
+    cancelledIndices.sort((a, b) => b - a);
+
+    const requests = cancelledIndices.map(rowIndex => ({
+      deleteDimension: {
+        range: {
+          sheetId,
+          dimension: 'ROWS',
+          startIndex: rowIndex,
+          endIndex: rowIndex + 1,
+        },
+      },
+    }));
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: config.SPREADSHEET_ID,
+      requestBody: { requests },
+    });
+    console.log(`🗑️ キャンセル済み予約 ${cancelledIndices.length} 件を削除しました`);
+  } catch (err) {
+    console.error('❌ [deleteCancelledRows] 失敗:', err.message);
+  }
+}
+
+/** 既存予約のJ列（料金）が空の行に料金を遡及設定 */
+async function backfillPrices() {
+  try {
+    const sheets = await getSheets();
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.SPREADSHEET_ID,
+      range: `${config.SHEET_NAME}!A:J`,
+    });
+    const rows = res.data.values || [];
+
+    const updates = [];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row) continue;
+      const duration = parseInt(row[4]);
+      const price = row[9];
+      if ((price == null || price === '') && config.PRICES[duration]?.discounted != null) {
+        updates.push({
+          range: `${config.SHEET_NAME}!J${i + 1}`,
+          values: [[config.PRICES[duration].discounted]],
+        });
+      }
+    }
+    if (updates.length === 0) {
+      console.log('💰 バックフィル対象なし（全行設定済み）');
+      return;
+    }
+
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: config.SPREADSHEET_ID,
+      requestBody: { valueInputOption: 'USER_ENTERED', data: updates },
+    });
+    console.log(`💰 料金バックフィル完了: ${updates.length} 件更新`);
+  } catch (err) {
+    console.error('❌ [backfillPrices] 失敗:', err.message);
+  }
+}
+
+module.exports = { getAvailableSlots, saveBooking, ensureHeaders, getUserReservations, cancelBooking, deleteCancelledRows, backfillPrices };
