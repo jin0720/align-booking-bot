@@ -36,6 +36,14 @@ async function handleEvent(event, client) {
     replyToken = event.replyToken;
     console.log(`📩 [${userId}] 受信: "${text}" (長さ: ${text.length})`);
 
+    // リセット系キーワード以外のテキストは無視（ポストバックのみで予約フローを制御）
+    const RESET_KEYWORDS = ['リセット', 'やり直し', '最初から', 'やめる', 'やめ', 'cancel'];
+    const isReset = RESET_KEYWORDS.some(k => text.toLowerCase().includes(k));
+    if (!isReset) {
+      console.log(`⏭️ [${userId}] テキストメッセージを無視: "${text}"`);
+      return null;
+    }
+
   } else if (event.type === 'postback') {
     userId     = event.source.userId;
     replyToken = event.replyToken;

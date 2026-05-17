@@ -56,10 +56,6 @@ function isReservationCancelTriggered(text) {
 function buildWelcomeMessages() {
   return [
     {
-      type: 'text',
-      text: 'お問い合わせありがとうございます！\n\n｢リセット｣と送るといつでも最初に戻れます。',
-    },
-    {
       type: 'flex',
       altText: 'メニューを選択してください',
       contents: {
