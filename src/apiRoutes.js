@@ -3,6 +3,7 @@ const express = require('express');
 const {
   getAvailableSlots,
   saveBooking,
+  saveBookingIfAvailable,
   getUserReservations,
   cancelBooking
 } = require('./sheetsService');
@@ -159,17 +160,19 @@ function createApiRoutes(lineClient) {
         return res.status(400).json({ error: '必須フィールドが不足しています' });
       }
 
-      // 楽観的ロック: 空き確認
-      const availableSlots = await getAvailableSlots(date, parseInt(duration));
-      if (!availableSlots.includes(time)) {
-        return res.status(409).json({
-          error: 'SLOT_TAKEN',
-          message: 'この時間はすでに埋まってしまいました。別の時間をお選びください。',
-          availableSlots,
-        });
+      let endTime;
+      try {
+        endTime = await saveBookingIfAvailable({ date, time, menu, duration, name, userId });
+      } catch (err) {
+        if (err.code === 'SLOT_TAKEN') {
+          return res.status(409).json({
+            error: 'SLOT_TAKEN',
+            message: err.message,
+            availableSlots: err.availableSlots,
+          });
+        }
+        throw err;
       }
-
-      const endTime = await saveBooking({ date, time, menu, duration, name, userId });
 
       // LINE確認メッセージをお客様に push 送信
       console.log(`📬 LINE通知フロー開始 — userId: "${userId}", lineClient: ${lineClient ? 'あり' : 'なし (null)'}`);

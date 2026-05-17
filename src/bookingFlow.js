@@ -3,7 +3,7 @@
 // 各ユーザーの会話状態をメモリ上で管理する
 
 const config = require('./config');
-const { getAvailableSlots, saveBooking, getUserReservations, cancelBooking } = require('./sheetsService');
+const { getAvailableSlots, saveBooking, saveBookingIfAvailable, getUserReservations, cancelBooking } = require('./sheetsService');
 const {
   timeToMinutes, minutesToTime,
   formatDateJP, parseDate, parseTime, formatSlotsText,
@@ -861,7 +861,7 @@ async function handleBookingFlow(userId, text, client) {
   if (session.step === 'confirm') {
     if (text === '確認:yes') {
       try {
-        const endTime = await saveBooking({
+        const endTime = await saveBookingIfAvailable({
           date: session.date,
           time: session.time,
           menu: session.menu,

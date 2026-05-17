@@ -491,4 +491,33 @@ async function ensureGoalSheet() {
   }
 }
 
-module.exports = { getAvailableSlots, saveBooking, ensureHeaders, getUserReservations, cancelBooking, deleteCancelledRows, backfillPrices, ensureGoalSheet };
+// 同一スロットへの同時予約を直列化するキュー
+const slotQueues = new Map();
+
+function withSlotQueue(key, fn) {
+  const prev = slotQueues.get(key) ?? Promise.resolve();
+  const current = prev.then(() => fn());
+  const silent = current.catch(() => {});
+  slotQueues.set(key, silent);
+  silent.then(() => {
+    if (slotQueues.get(key) === silent) slotQueues.delete(key);
+  });
+  return current;
+}
+
+// 空き確認→保存をアトミックに実行。埋まっている場合は err.code === 'SLOT_TAKEN' をスロー。
+async function saveBookingIfAvailable({ date, time, menu, duration, name, userId }) {
+  const slotKey = `${date}_${time}`;
+  return withSlotQueue(slotKey, async () => {
+    const availableSlots = await getAvailableSlots(date, parseInt(duration));
+    if (!availableSlots.includes(time)) {
+      const err = new Error('この時間はすでに埋まってしまいました。別の時間をお選びください。');
+      err.code = 'SLOT_TAKEN';
+      err.availableSlots = availableSlots;
+      throw err;
+    }
+    return saveBooking({ date, time, menu, duration, name, userId });
+  });
+}
+
+module.exports = { getAvailableSlots, saveBooking, saveBookingIfAvailable, ensureHeaders, getUserReservations, cancelBooking, deleteCancelledRows, backfillPrices, ensureGoalSheet };
