@@ -750,7 +750,7 @@ async function handleBookingFlow(userId, text, client) {
       setSession(userId, { step: 'duration_select', menu });
       return [buildDurationMessage(config.MENUS[menu])];
     }
-    return [{ type: 'text', text: 'ボタンからメニューをお選びください。' }];
+    return [];
   }
 
   // ════════════════════════════════════════════════════════════
@@ -765,7 +765,7 @@ async function handleBookingFlow(userId, text, client) {
         return [buildDateMessage()];
       }
     }
-    return [{ type: 'text', text: 'ボタンからコースをお選びください。' }];
+    return [];
   }
 
   // ════════════════════════════════════════════════════════════
@@ -892,7 +892,7 @@ async function handleBookingFlow(userId, text, client) {
       }];
     }
 
-    return [{ type: 'text', text: 'ボタンから選択してください。' }];
+    return [];
   }
 
   // ════════════════════════════════════════════════════════════
