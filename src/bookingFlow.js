@@ -640,20 +640,66 @@ const TRAINING_GOAL_OPTIONS = [
   '運動不足を解消したい',
 ];
 
-/** 目標選択画面（Quick Reply付きテキスト）を返す */
+/** 目標選択画面（Flex Message カード形式）を返す */
 function buildTrainingGoalMessages(selectedGoals, headerText) {
-  const remaining = TRAINING_GOAL_OPTIONS.filter(g => !selectedGoals.includes(g));
-  const items = remaining.map(g => ({
-    type: 'action',
-    action: { type: 'message', label: g.length > 20 ? g.slice(0, 19) + '…' : g, text: `目標:${g}` },
-  }));
-  items.push({ type: 'action', action: { type: 'message', label: 'その他（自由入力）', text: '目標:その他' } });
-  items.push({ type: 'action', action: { type: 'message', label: '✅ 選択完了', text: '✅ 選択完了' } });
+  const goalButtons = TRAINING_GOAL_OPTIONS.map(g => {
+    const isSelected = selectedGoals.includes(g);
+    return {
+      type: 'button',
+      action: { type: 'message', label: isSelected ? `✓ ${g}` : g, text: `目標:${g}` },
+      style: isSelected ? 'primary' : 'secondary',
+      color: isSelected ? '#2C5F3F' : undefined,
+      margin: 'sm',
+    };
+  });
+
+  const footerContents = [
+    {
+      type: 'button',
+      action: { type: 'message', label: 'その他（自由入力）', text: '目標:その他' },
+      style: 'secondary',
+    },
+  ];
+  if (selectedGoals.length > 0) {
+    footerContents.push({
+      type: 'button',
+      action: { type: 'message', label: '✅ 選択完了', text: '✅ 選択完了' },
+      style: 'primary',
+      color: '#2C5F3F',
+    });
+  }
 
   return [{
-    type: 'text',
-    text: headerText,
-    quickReply: { items: items.slice(0, 13) }, // LINE上限13件
+    type: 'flex',
+    altText: headerText,
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#2C5F3F',
+        contents: [{
+          type: 'text',
+          text: headerText,
+          color: '#ffffff',
+          weight: 'bold',
+          size: 'sm',
+          wrap: true,
+        }],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: goalButtons,
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: footerContents,
+      },
+    },
   }];
 }
 
@@ -701,7 +747,7 @@ function buildTrainingNextActionMessage(userId, session) {
             type: 'button',
             action: {
               type: 'uri',
-              label: '今すぐ予約する（ミニアプリ）',
+              label: '今すぐ予約する',
               uri: 'https://liff.line.me/2009962690-j5dQBfYL?menu=training',
             },
             style: 'primary',
@@ -1004,7 +1050,7 @@ async function handleBookingFlow(userId, text, client) {
               type: 'button',
               action: {
                 type: 'postback',
-                label: '💬 目標から相談する',
+                label: 'まずは相談する',
                 data: 'training_start_consultation',
               },
               style: 'secondary',
