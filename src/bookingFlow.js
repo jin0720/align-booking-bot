@@ -710,7 +710,8 @@ function buildTrainingNextActionMessage(userId, session) {
     ? goals.map(g => `・${g}`).join('\n')
     : '目標は特になし';
 
-  clearSession(userId);
+  // goalsを保持したまま次のステップへ（training_wait_replyハンドラでgoalsを使うため）
+  setSession(userId, { step: 'training_awaiting_action' });
   return [{
     type: 'flex',
     altText: '目標が決まりました！次のステップを選んでください。',
