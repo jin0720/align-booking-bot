@@ -21,6 +21,35 @@ module.exports = {
   BUSINESS_END:   23 * 60,   // 23:00 (閉店時刻 = 施術終了の上限)
   SLOT_INTERVAL:  30,         // 30分刻み
 
+  // ─── トレーニングメニュー ──────────────────────────────────
+  TRAINING_MENUS: {
+    training: 'パーソナルトレーニング',
+  },
+
+  // ─── トレーニング料金 ──────────────────────────────────────
+  TRAINING_PRICES: {
+    60: { original: 10000, discounted: 9000,  label: '60分' },
+    90: { original: 13000, discounted: 12000, label: '90分' },
+  },
+
+  // ─── トレーニング予約締切（前日この時間まで） ──────────────
+  TRAINING_BOOKING_DEADLINE_HOUR: 22,
+
+  // ─── トレーニング専用シート名 ──────────────────────────────
+  TRAINING_SHEET_NAME: 'トレーニング予約',
+
+  // ─── レンタルジム情報（確定通知でお客様に送付） ──────────
+  GYM_LOCATIONS: [
+    {
+      name: 'レンタルジムA（要変更）',
+      address: '住所・アクセス情報をここに記入',
+    },
+    {
+      name: 'レンタルジムB（要変更）',
+      address: '住所・アクセス情報をここに記入',
+    },
+  ],
+
   // ─── Google Sheets & Calendar ─────────────────────────────
   SPREADSHEET_ID: process.env.GOOGLE_SPREADSHEET_ID,
   SHEET_NAME: '予約一覧',

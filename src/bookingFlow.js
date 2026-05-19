@@ -3,7 +3,7 @@
 // 各ユーザーの会話状態をメモリ上で管理する
 
 const config = require('./config');
-const { getAvailableSlots, saveBooking, saveBookingIfAvailable, getUserReservations, cancelBooking } = require('./sheetsService');
+const { getAvailableSlots, saveBooking, saveBookingIfAvailable, getUserReservations, cancelBooking, updateTrainingBookingStatus, getTrainingBookingByRow } = require('./sheetsService');
 const {
   timeToMinutes, minutesToTime,
   formatDateJP, parseDate, parseTime, formatSlotsText,
@@ -33,7 +33,7 @@ const TRIGGER_KEYWORDS = ['マッサージ予約', 'マッサージ予約（自�
 const CANCEL_KEYWORDS = ['キャンセル', 'やめる', 'やめ', 'cancel', '最初から', 'やり直し', 'リセット'];
 const LIST_RESERVATIONS_KEYWORDS = ['予約表示', '予約確認', '予約一覧', '予約の確認・変更・キャンセル', '予約の確認・変更', '変更・キャンセル'];
 const CANCEL_RESERVATION_KEYWORDS = ['予約キャンセル', '予約のキャンセル', 'キャンセルしたい'];
-const TRAINING_KEYWORDS = ['トレーニングお問い合わせ', 'トレーニング予約', 'パーソナルトレーニング', 'トレーニング'];
+const TRAINING_KEYWORDS = ['トレーニングお問い合わせ', 'トレーニング予約', 'パーソナルトレーニング', 'トレーニング相談・体験予約', 'トレーニング相談', 'トレーニング'];
 
 function isTriggered(text) {
   return TRIGGER_KEYWORDS.some(k => text === k);
@@ -629,6 +629,100 @@ function buildReservationListMessage(reservations) {
 }
 
 // ────────────────────────────────────────────────────────────────
+// トレーニング相談フロー ヘルパー
+// ────────────────────────────────────────────────────────────────
+
+const TRAINING_GOAL_OPTIONS = [
+  '筋肉をつけて身体大きくしたい',
+  '腹筋を割りたい',
+  '健康的に痩せたい',
+  '健康的な身体になりたい',
+  '運動不足を解消したい',
+];
+
+/** 目標選択画面（Quick Reply付きテキスト）を返す */
+function buildTrainingGoalMessages(selectedGoals, headerText) {
+  const remaining = TRAINING_GOAL_OPTIONS.filter(g => !selectedGoals.includes(g));
+  const items = remaining.map(g => ({
+    type: 'action',
+    action: { type: 'message', label: g.length > 20 ? g.slice(0, 19) + '…' : g, text: `目標:${g}` },
+  }));
+  items.push({ type: 'action', action: { type: 'message', label: 'その他（自由入力）', text: '目標:その他' } });
+  items.push({ type: 'action', action: { type: 'message', label: '✅ 選択完了', text: '✅ 選択完了' } });
+
+  return [{
+    type: 'text',
+    text: headerText,
+    quickReply: { items: items.slice(0, 13) }, // LINE上限13件
+  }];
+}
+
+/** 次アクション選択 Flex（予約 or 返信待ち）を返す */
+function buildTrainingNextActionMessage(userId, session) {
+  const goals = session.goals || [];
+  const goalsText = goals.length > 0
+    ? goals.map(g => `・${g}`).join('\n')
+    : '目標は特になし';
+
+  clearSession(userId);
+  return [{
+    type: 'flex',
+    altText: '目標が決まりました！次のステップを選んでください。',
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#2C5F3F',
+        contents: [{
+          type: 'text',
+          text: '🎯 選択された目標',
+          color: '#ffffff',
+          weight: 'bold',
+          size: 'md',
+        }],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          { type: 'text', text: goalsText, size: 'sm', wrap: true },
+          { type: 'separator', margin: 'md' },
+          { type: 'text', text: '次のステップを選んでください😊', size: 'sm', wrap: true, margin: 'md' },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'button',
+            action: {
+              type: 'uri',
+              label: '今すぐ予約する（ミニアプリ）',
+              uri: 'https://liff.line.me/2009962690-j5dQBfYL?menu=training',
+            },
+            style: 'primary',
+            color: '#2C5F3F',
+          },
+          {
+            type: 'button',
+            action: {
+              type: 'message',
+              label: 'トレーナーからの返信を待つ',
+              text: 'training_wait_reply',
+            },
+            style: 'secondary',
+          },
+        ],
+      },
+    },
+  }];
+}
+
+// ────────────────────────────────────────────────────────────────
 // メインフロー
 // ────────────────────────────────────────────────────────────────
 
@@ -655,20 +749,269 @@ async function handleBookingFlow(userId, text, client) {
     return buildWelcomeMessages();
   }
 
-  // ── トレーニングお問い合わせ ─────────────────────────────────────────
+  // ── オーナー操作: トレーニング予約確定 ──────────────────────────
+  if (text.startsWith('training_confirm:')) {
+    const parts = text.split(':');
+    const rowIndex = parseInt(parts[1]);
+    const customerUserId = parts[2];
+    try {
+      const booking = await getTrainingBookingByRow(rowIndex);
+      if (!booking) {
+        return [{ type: 'text', text: '⚠️ 予約情報が見つかりませんでした。' }];
+      }
+      await updateTrainingBookingStatus(rowIndex, '確定');
+
+      const gyms = config.GYM_LOCATIONS;
+      const gymText = gyms.map((g, i) => `${i === 0 ? '①' : '②'}${g.name}\n　${g.address}`).join('\n');
+
+      await client.pushMessage({
+        to: customerUserId,
+        messages: [{
+          type: 'flex',
+          altText: '✅ トレーニング予約が確定しました',
+          contents: {
+            type: 'bubble',
+            header: {
+              type: 'box',
+              layout: 'vertical',
+              backgroundColor: '#2C5F3F',
+              contents: [{
+                type: 'text',
+                text: '✅ トレーニング予約が確定しました',
+                color: '#ffffff',
+                weight: 'bold',
+                size: 'md',
+                wrap: true,
+              }],
+            },
+            body: {
+              type: 'box',
+              layout: 'vertical',
+              spacing: 'sm',
+              contents: [
+                { type: 'text', text: `📅 ${formatDateJP(booking.date)}　${booking.time}〜${booking.endTime}`, size: 'sm', wrap: true },
+                { type: 'text', text: `⏱ パーソナルトレーニング ${booking.duration}分`, size: 'sm', wrap: true },
+                { type: 'separator', margin: 'md' },
+                { type: 'text', text: '📍 ご利用ジム（当日トレーナーがご案内）', size: 'xs', color: '#888888', margin: 'md' },
+                { type: 'text', text: gymText, size: 'sm', wrap: true },
+                { type: 'separator', margin: 'md' },
+                { type: 'text', text: '※ 動きやすい服装でお越しください😊', size: 'xs', color: '#888888', wrap: true },
+              ],
+            },
+          },
+        }],
+      });
+      return [{ type: 'text', text: `✅ ${booking.name}様に予約確定通知を送信しました！` }];
+    } catch (e) {
+      console.error('トレーニング確定処理エラー:', e.message);
+      return [{ type: 'text', text: '⚠️ 確定処理中にエラーが発生しました。' }];
+    }
+  }
+
+  // ── オーナー操作: 別の時間を提案 ────────────────────────────────
+  if (text.startsWith('training_propose:')) {
+    const parts = text.split(':');
+    const rowIndex = parseInt(parts[1]);
+    const customerUserId = parts[2];
+    try {
+      const booking = await getTrainingBookingByRow(rowIndex);
+      if (!booking) {
+        return [{ type: 'text', text: '⚠️ 予約情報が見つかりませんでした。' }];
+      }
+      await updateTrainingBookingStatus(rowIndex, '時間変更提案中');
+      setSession(userId, { step: 'owner_propose_time', rowIndex, customerUserId, bookingName: booking.name });
+      return [{ type: 'text', text: `${booking.name}様への代替時間案をチャットで入力してください。\n例: 5月20日 14:00か16:00` }];
+    } catch (e) {
+      console.error('トレーニング代替提案エラー:', e.message);
+      return [{ type: 'text', text: '⚠️ エラーが発生しました。' }];
+    }
+  }
+
+  // ── オーナー操作: 代替時間のテキストを入力中 ────────────────────
+  if (session.step === 'owner_propose_time') {
+    const { customerUserId, bookingName } = session;
+    const liffUrl = 'https://liff.line.me/2009962690-j5dQBfYL?menu=training';
+    try {
+      await client.pushMessage({
+        to: customerUserId,
+        messages: [{
+          type: 'flex',
+          altText: '⏰ トレーナーより時間変更のご提案',
+          contents: {
+            type: 'bubble',
+            header: {
+              type: 'box',
+              layout: 'vertical',
+              backgroundColor: '#8C7A6B',
+              contents: [{
+                type: 'text',
+                text: '⏰ トレーナーより時間変更のご提案',
+                color: '#ffffff',
+                weight: 'bold',
+                size: 'md',
+                wrap: true,
+              }],
+            },
+            body: {
+              type: 'box',
+              layout: 'vertical',
+              spacing: 'sm',
+              contents: [
+                { type: 'text', text: text, size: 'sm', wrap: true },
+                { type: 'separator', margin: 'md' },
+                { type: 'text', text: '上記の日程でよろしければ下のボタンから再予約をお願いします😊', size: 'xs', color: '#888888', wrap: true, margin: 'md' },
+              ],
+            },
+            footer: {
+              type: 'box',
+              layout: 'vertical',
+              contents: [{
+                type: 'button',
+                action: { type: 'uri', label: '再予約する（ミニアプリ）', uri: liffUrl },
+                style: 'primary',
+                color: '#2C5F3F',
+              }],
+            },
+          },
+        }],
+      });
+      clearSession(userId);
+      return [{ type: 'text', text: `✅ ${bookingName}様に代替案を送信しました！` }];
+    } catch (e) {
+      console.error('代替案送信エラー:', e.message);
+      return [{ type: 'text', text: '⚠️ 送信中にエラーが発生しました。' }];
+    }
+  }
+
+  // ── トレーニング: 目標選択中 ──────────────────────────────────────
+  if (session.step === 'training_goal_select') {
+    // 「その他」タップ
+    if (text === '目標:その他') {
+      setSession(userId, { step: 'training_goal_freetext' });
+      return [{ type: 'text', text: 'どのような目標か、チャットで教えてください😊' }];
+    }
+    // 「選択完了」タップ
+    if (text === '✅ 選択完了') {
+      return buildTrainingNextActionMessage(userId, session);
+    }
+    // 目標タップ
+    if (text.startsWith('目標:')) {
+      const goal = text.replace('目標:', '');
+      const goals = session.goals || [];
+      if (!goals.includes(goal)) goals.push(goal);
+      setSession(userId, { goals });
+      return buildTrainingGoalMessages(goals, `✓「${goal}」を選択しました！\n他の目標も選べます😊`);
+    }
+    return [];
+  }
+
+  // ── トレーニング: その他フリーテキスト入力 ─────────────────────
+  if (session.step === 'training_goal_freetext') {
+    const goals = session.goals || [];
+    goals.push(text);
+    setSession(userId, { goals, step: 'training_goal_select' });
+    return buildTrainingGoalMessages(goals, `✓「${text}」を選択しました！\n他の目標も選べます😊`);
+  }
+
+  // ── トレーニング: 返信待ち ────────────────────────────────────────
+  if (text === 'training_wait_reply') {
+    const goals = session.goals || [];
+    const goalsText = goals.length > 0 ? goals.map(g => `・${g}`).join('\n') : '（未回答）';
+    let displayName = '';
+    try {
+      const profile = await client.getProfile(userId);
+      displayName = profile.displayName || '';
+    } catch (e) {}
+
+    const ownerId = config.OWNER_LINE_USER_ID;
+    if (ownerId) {
+      client.pushMessage({
+        to: ownerId,
+        messages: [{
+          type: 'text',
+          text: `💬 トレーニング相談が届きました！\n\n👤 ${displayName || userId}\n\n🎯 目標:\n${goalsText}\n\nLINEから直接返信してください。`,
+        }],
+      }).catch(e => console.error('オーナー相談通知失敗:', e.message));
+    }
+
+    clearSession(userId);
+    return [{
+      type: 'text',
+      text: 'ご回答ありがとうございます！\nトレーナーより折り返しご連絡いたします。\n少々お待ちください😊',
+    }];
+  }
+
+  // ── トレーニング相談・体験予約 エントリーポイント ────────────────
   if (TRAINING_KEYWORDS.some(k => text.includes(k))) {
     let displayName = '';
     try {
       const profile = await client.getProfile(userId);
       displayName = profile.displayName || '';
-    } catch (e) {
-      console.error('トレーニング問い合わせ時のプロフィール取得失敗:', e.message);
-    }
+    } catch (e) {}
     const greeting = displayName ? `${displayName}さん、` : '';
+
     return [{
-      type: 'text',
-      text: `${greeting}お問い合わせありがとうございます！\n\nパーソナルトレーニングはレンタルジム(完全個室)にて実施しています。\n\n「運動が久しぶり」\n「何をしたらいいかわからない」\n「筋肉をつけたいけど、何から始めればいいかわからない」\nという方も多いので、まずは気軽にご相談ください。\n\n身体や目的に合わせて、無理なく続けられる内容をご提案します😊`,
+      type: 'flex',
+      altText: `${greeting}パーソナルトレーニングへようこそ！`,
+      contents: {
+        type: 'bubble',
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#2C5F3F',
+          contents: [{
+            type: 'text',
+            text: `🏋️ ${greeting}パーソナルトレーニングへようこそ！`,
+            color: '#ffffff',
+            weight: 'bold',
+            size: 'md',
+            wrap: true,
+          }],
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'sm',
+          contents: [
+            { type: 'text', text: '完全個室のレンタルジムでマンツーマン指導✨', size: 'sm', wrap: true },
+            { type: 'text', text: 'どちらからご利用ですか？', size: 'sm', wrap: true, margin: 'md' },
+          ],
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'sm',
+          contents: [
+            {
+              type: 'button',
+              action: {
+                type: 'uri',
+                label: '✨ まずは体験してみる（初回60分¥9,000）',
+                uri: 'https://liff.line.me/2009962690-j5dQBfYL?menu=training&duration=60&trial=true',
+              },
+              style: 'primary',
+              color: '#2C5F3F',
+            },
+            {
+              type: 'button',
+              action: {
+                type: 'postback',
+                label: '💬 目標から相談する',
+                data: 'training_start_consultation',
+              },
+              style: 'secondary',
+            },
+          ],
+        },
+      },
     }];
+  }
+
+  // ── トレーニング相談スタート（目標選択へ） ───────────────────────
+  if (text === 'トレーニング相談スタート') {
+    clearSession(userId);
+    setSession(userId, { step: 'training_goal_select', goals: [] });
+    return buildTrainingGoalMessages([], 'あなたの目標を教えてください！\n複数選択できます😊');
   }
 
   // ── 予約キャンセル・確認開始トリガー → LIFFミニアプリに誘導 ───────────

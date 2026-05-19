@@ -520,4 +520,150 @@ async function saveBookingIfAvailable({ date, time, menu, duration, name, userId
   });
 }
 
-module.exports = { getAvailableSlots, saveBooking, saveBookingIfAvailable, ensureHeaders, getUserReservations, cancelBooking, deleteCancelledRows, backfillPrices, ensureGoalSheet };
+// ────────────────────────────────────────────────────────────────
+// トレーニング予約専用シート操作
+// ────────────────────────────────────────────────────────────────
+
+/** トレーニングシートにヘッダー行作成（なければ） */
+async function ensureTrainingHeaders() {
+  const sheets = await getSheets();
+  const spreadsheetMeta = await sheets.spreadsheets.get({
+    spreadsheetId: config.SPREADSHEET_ID,
+  });
+  const sheetExists = spreadsheetMeta.data.sheets.some(
+    s => s.properties.title === config.TRAINING_SHEET_NAME
+  );
+  if (!sheetExists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: config.SPREADSHEET_ID,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: config.TRAINING_SHEET_NAME } } }],
+      },
+    });
+  }
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.SPREADSHEET_ID,
+    range: `${config.TRAINING_SHEET_NAME}!A1:K1`,
+  });
+  if (!res.data.values?.[0]?.[0]) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.SPREADSHEET_ID,
+      range: `${config.TRAINING_SHEET_NAME}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [['日付', '開始時間', '終了時間', 'メニュー', '時間（分）', 'お名前', 'LINE UserID', '予約日時', 'ステータス', '料金', '目標']],
+      },
+    });
+  }
+}
+
+/** トレーニング仮予約を保存（ステータス: 仮予約）。rowIndex を返す */
+async function saveTrainingBooking({ date, time, menu, duration, name, userId, goals = [] }) {
+  await ensureTrainingHeaders();
+  const sheets = await getSheets();
+  const endMinutes = timeToMinutes(time) + parseInt(duration);
+  const endTime    = minutesToTime(endMinutes);
+  const menuName   = config.TRAINING_MENUS[menu] || menu;
+  const now        = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+  const price      = config.TRAINING_PRICES[parseInt(duration)]?.discounted ?? '';
+  const goalsStr   = goals.join('、');
+
+  const appendRes = await sheets.spreadsheets.values.append({
+    spreadsheetId: config.SPREADSHEET_ID,
+    range: `${config.TRAINING_SHEET_NAME}!A:K`,
+    valueInputOption: 'USER_ENTERED',
+    includeValuesInResponse: true,
+    requestBody: {
+      values: [[date, time, endTime, menuName, duration, name, userId, now, '仮予約', price, goalsStr]],
+    },
+  });
+
+  // 追加された行番号を取得
+  const updatedRange = appendRes.data.updates?.updatedRange || '';
+  const match = updatedRange.match(/(\d+)$/);
+  const rowIndex = match ? parseInt(match[1]) : null;
+
+  return { endTime, rowIndex };
+}
+
+/** トレーニング予約のステータスを更新 */
+async function updateTrainingBookingStatus(rowIndex, status) {
+  const sheets = await getSheets();
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: config.SPREADSHEET_ID,
+    range: `${config.TRAINING_SHEET_NAME}!I${rowIndex}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[status]] },
+  });
+}
+
+/** トレーニング予約1件を取得（rowIndex は Sheets の実際の行番号） */
+async function getTrainingBookingByRow(rowIndex) {
+  const sheets = await getSheets();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.SPREADSHEET_ID,
+    range: `${config.TRAINING_SHEET_NAME}!A${rowIndex}:K${rowIndex}`,
+  });
+  const row = res.data.values?.[0];
+  if (!row) return null;
+  return {
+    rowIndex,
+    date:     row[0],
+    time:     row[1],
+    endTime:  row[2],
+    menu:     row[3],
+    duration: row[4],
+    name:     row[5],
+    userId:   row[6],
+    status:   row[8],
+    price:    row[9],
+    goals:    row[10],
+  };
+}
+
+/** ユーザーのトレーニング予約一覧を取得（仮予約・確定のみ、未来分） */
+async function getUserTrainingReservations(userId) {
+  const sheets = await getSheets();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.SPREADSHEET_ID,
+      range: `${config.TRAINING_SHEET_NAME}!A:K`,
+    });
+    const rows = res.data.values || [];
+    const now = new Date();
+
+    return rows.slice(1).map((row, index) => {
+      if (!row || row.length < 9) return null;
+      return {
+        rowIndex: index + 2,
+        date:     row[0],
+        time:     row[1],
+        endTime:  row[2],
+        menu:     row[3],
+        duration: row[4],
+        name:     row[5],
+        userId:   String(row[6]).trim(),
+        status:   row[8],
+        goals:    row[10] || '',
+      };
+    }).filter(r => {
+      if (!r) return false;
+      if (r.userId !== String(userId).trim()) return false;
+      if (!['仮予約', '確定'].includes(r.status)) return false;
+      try {
+        const [y, m, d] = r.date.split('-').map(Number);
+        const [hh, mm] = r.time.split(':').map(Number);
+        return new Date(y, m - 1, d, hh, mm) >= now;
+      } catch { return false; }
+    });
+  } catch (err) {
+    console.error('❌ [getUserTrainingReservations] 失敗:', err.message);
+    return [];
+  }
+}
+
+module.exports = {
+  getAvailableSlots, saveBooking, saveBookingIfAvailable, ensureHeaders,
+  getUserReservations, cancelBooking, deleteCancelledRows, backfillPrices, ensureGoalSheet,
+  saveTrainingBooking, updateTrainingBookingStatus, getTrainingBookingByRow, getUserTrainingReservations,
+};

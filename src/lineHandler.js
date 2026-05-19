@@ -18,10 +18,12 @@ const POSTBACK_TEXT_MAP = {
   'action=new_booking':             'マッサージ予約',
   'action=booking':                 'マッサージ予約',
   'action=start_booking':           'マッサージ予約',
-  // トレーニングお問い合わせ系
-  'action=training':                'トレーニングお問い合わせ',
-  'action=training_inquiry':        'トレーニングお問い合わせ',
-  'action=training_booking':        'トレーニングお問い合わせ',
+  // トレーニング系
+  'action=training':                    'トレーニング相談・体験予約',
+  'action=training_inquiry':            'トレーニング相談・体験予約',
+  'action=training_consultation':       'トレーニング相談・体験予約',
+  'action=training_booking':            'トレーニング相談・体験予約',
+  'training_start_consultation':        'トレーニング相談スタート',
 };
 
 /**
