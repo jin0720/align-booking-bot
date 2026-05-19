@@ -941,6 +941,14 @@ async function handleBookingFlow(userId, text, client) {
     }];
   }
 
+  // ── トレーニング相談スタート（目標選択へ） ───────────────────────
+  // ※ TRAINING_KEYWORDS に「トレーニング相談」が含まれるため、必ずこちらを先に判定する
+  if (text === 'トレーニング相談スタート') {
+    clearSession(userId);
+    setSession(userId, { step: 'training_goal_select', goals: [] });
+    return buildTrainingGoalMessages([], 'あなたの目標を教えてください！\n複数選択できます😊');
+  }
+
   // ── トレーニング相談・体験予約 エントリーポイント ────────────────
   if (TRAINING_KEYWORDS.some(k => text.includes(k))) {
     let displayName = '';
@@ -1005,13 +1013,6 @@ async function handleBookingFlow(userId, text, client) {
         },
       },
     }];
-  }
-
-  // ── トレーニング相談スタート（目標選択へ） ───────────────────────
-  if (text === 'トレーニング相談スタート') {
-    clearSession(userId);
-    setSession(userId, { step: 'training_goal_select', goals: [] });
-    return buildTrainingGoalMessages([], 'あなたの目標を教えてください！\n複数選択できます😊');
   }
 
   // ── 予約キャンセル・確認開始トリガー → LIFFミニアプリに誘導 ───────────
