@@ -322,7 +322,7 @@ function buildConfirmMessage(session) {
                 type: 'button',
                 action: { type: 'message', label: '✅ 予約を確定する', text: '確認:yes' },
                 style: 'primary',
-                color: '#8C7A6B'
+                color: '#2C5F3F'
               },
               {
                 type: 'button',
@@ -1245,8 +1245,14 @@ async function handleBookingFlow(userId, text, client) {
   // ════════════════════════════════════════════════════════════
   // STEP: 予約確認
   // ════════════════════════════════════════════════════════════
+  if (session.step === 'booking_processing') {
+    return [{ type: 'text', text: '予約を処理中です。しばらくお待ちください。' }];
+  }
+
   if (session.step === 'confirm') {
     if (text === '確認:yes') {
+      // 二重送信防止: 非同期処理前に即座にステップを変更
+      setSession(userId, { step: 'booking_processing' });
       try {
         const endTime = await saveBookingIfAvailable({
           date: session.date,
@@ -1268,6 +1274,8 @@ async function handleBookingFlow(userId, text, client) {
 
       } catch (err) {
         console.error('予約保存エラー:', err);
+        // エラー時はconfirmに戻して再試行できるようにする
+        setSession(userId, { step: 'confirm' });
         return [{
           type: 'text',
           text: '申し訳ありません、予約の保存に失敗しました。\nお手数ですが、再度「マッサージ予約」と送ってお試しください。',
