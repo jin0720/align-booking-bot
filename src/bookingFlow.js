@@ -319,10 +319,20 @@ function buildConfirmMessage(session) {
             layout: 'vertical',
             contents: [
               {
+                type: 'text',
+                text: 'まだ予約は完了していません。\n下のボタンをタップして確定してください。',
+                size: 'xs',
+                color: '#cc6600',
+                wrap: true,
+                align: 'center',
+                margin: 'sm'
+              },
+              {
                 type: 'button',
                 action: { type: 'message', label: '✅ 予約を確定する', text: '確認:yes' },
                 style: 'primary',
-                color: '#2C5F3F'
+                color: '#2C5F3F',
+                margin: 'md'
               },
               {
                 type: 'button',
