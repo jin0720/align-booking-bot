@@ -56,7 +56,7 @@ function isReservationCancelTriggered(text) {
 function buildMassageLiffCard(greeting) {
   return {
     type: 'flex',
-    altText: `${greeting}マッサージ・整体のご予約`,
+    altText: `${greeting}マッサージのご予約`,
     contents: {
       type: 'bubble',
       header: {
@@ -65,7 +65,7 @@ function buildMassageLiffCard(greeting) {
         backgroundColor: '#8C7A6B',
         contents: [{
           type: 'text',
-          text: `${greeting}マッサージ・整体のご予約`,
+          text: `${greeting}マッサージのご予約`,
           color: '#ffffff',
           weight: 'bold',
           size: 'md',
