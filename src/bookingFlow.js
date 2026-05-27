@@ -79,6 +79,14 @@ function buildMassageLiffCard(greeting) {
         contents: [
           { type: 'text', text: '完全個室でリラックスした施術をお届けします', size: 'sm', wrap: true },
           { type: 'text', text: 'ミニアプリから空き時間をすぐにご確認・ご予約いただけます', size: 'sm', wrap: true, margin: 'md', color: '#888888' },
+          {
+            type: 'text',
+            text: '※「予約する」をタップすると当店公式の予約フォームが開きます。LINEのお名前を自動入力するため、プロフィール情報へのアクセス許可をお願いします。',
+            size: 'xxs',
+            wrap: true,
+            margin: 'lg',
+            color: '#aaaaaa',
+          },
         ],
       },
       footer: {
