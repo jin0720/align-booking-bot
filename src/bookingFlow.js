@@ -76,14 +76,14 @@ function buildMassageLiffCard(greeting) {
       body: {
         type: 'box',
         layout: 'vertical',
-        spacing: 'sm',
+        paddingTop: 'lg',
+        paddingBottom: 'lg',
         contents: [
           {
             type: 'text',
-            text: '※「予約する」をタップすると当店公式の予約フォームが開きます。LINEのお名前を自動入力するため、プロフィール情報へのアクセス許可をお願いします。',
+            text: '※「予約する」をタップすると当店公式の予約フォームが開きます（初回のみ許可が必要です）。LINEのお名前を自動入力するため、プロフィール情報へのアクセス許可をお願いします。',
             size: 'xxs',
             wrap: true,
-            margin: 'lg',
             color: '#aaaaaa',
           },
         ],
