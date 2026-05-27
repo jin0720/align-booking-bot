@@ -52,6 +52,53 @@ function isReservationCancelTriggered(text) {
 // メッセージビルダー
 // ────────────────────────────────────────────────────────────────
 
+/** マッサージ予約 → LIFF誘導カード */
+function buildMassageLiffCard(greeting) {
+  return {
+    type: 'flex',
+    altText: `${greeting}マッサージ・整体のご予約`,
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#8C7A6B',
+        contents: [{
+          type: 'text',
+          text: `${greeting}マッサージ・整体のご予約`,
+          color: '#ffffff',
+          weight: 'bold',
+          size: 'md',
+          wrap: true,
+        }],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          { type: 'text', text: '完全個室でリラックスした施術をお届けします', size: 'sm', wrap: true },
+          { type: 'text', text: 'ミニアプリから空き時間をすぐにご確認・ご予約いただけます', size: 'sm', wrap: true, margin: 'md', color: '#888888' },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [{
+          type: 'button',
+          action: {
+            type: 'uri',
+            label: '予約する',
+            uri: 'https://liff.line.me/2009962690-j5dQBfYL',
+          },
+          style: 'primary',
+          color: '#8C7A6B',
+        }],
+      },
+    },
+  };
+}
+
 /** ウェルカム + メニュー選択 Flex */
 function buildWelcomeMessages() {
   return [
@@ -799,11 +846,16 @@ async function handleBookingFlow(userId, text, client) {
     return [{ type: 'text', text: `あなたのLINE User IDは：\n${userId}` }];
   }
 
-  // ── 予約開始トリガー (どこにいても最初から開始できるようにする) ───
+  // ── 予約開始トリガー → LIFFミニアプリへ誘導 ─────────────────
   if (isTriggered(text)) {
     clearSession(userId);
-    setSession(userId, { step: 'menu_select' });
-    return buildWelcomeMessages();
+    let displayName = '';
+    try {
+      const profile = await client.getProfile(userId);
+      displayName = profile.displayName || '';
+    } catch (e) {}
+    const greeting = displayName ? `${displayName}さん、` : '';
+    return [buildMassageLiffCard(greeting)];
   }
 
   // ── オーナー操作: トレーニング予約確定 ──────────────────────────
