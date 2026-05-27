@@ -70,6 +70,7 @@ function buildMassageLiffCard(greeting) {
           weight: 'bold',
           size: 'md',
           wrap: true,
+          align: 'center',
         }],
       },
       body: {
@@ -77,7 +78,6 @@ function buildMassageLiffCard(greeting) {
         layout: 'vertical',
         spacing: 'sm',
         contents: [
-          { type: 'text', text: '完全個室でリラックスした施術', size: 'sm', wrap: false },
           {
             type: 'text',
             text: '※「予約する」をタップすると当店公式の予約フォームが開きます。LINEのお名前を自動入力するため、プロフィール情報へのアクセス許可をお願いします。',
