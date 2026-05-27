@@ -56,7 +56,7 @@ function isReservationCancelTriggered(text) {
 function buildMassageLiffCard(greeting) {
   return {
     type: 'flex',
-    altText: `${greeting}マッサージのご予約`,
+    altText: 'マッサージのご予約',
     contents: {
       type: 'bubble',
       header: {
@@ -65,7 +65,7 @@ function buildMassageLiffCard(greeting) {
         backgroundColor: '#8C7A6B',
         contents: [{
           type: 'text',
-          text: `${greeting}マッサージのご予約`,
+          text: 'マッサージのご予約',
           color: '#ffffff',
           weight: 'bold',
           size: 'md',
@@ -77,7 +77,7 @@ function buildMassageLiffCard(greeting) {
         layout: 'vertical',
         spacing: 'sm',
         contents: [
-          { type: 'text', text: '完全個室でリラックスした施術をお届けします', size: 'sm', wrap: false, adjustMode: 'shrink-to-fit' },
+          { type: 'text', text: '完全個室でリラックスした施術', size: 'sm', wrap: false },
           {
             type: 'text',
             text: '※「予約する」をタップすると当店公式の予約フォームが開きます。LINEのお名前を自動入力するため、プロフィール情報へのアクセス許可をお願いします。',
