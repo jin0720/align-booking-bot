@@ -1111,7 +1111,7 @@ async function handleBookingFlow(userId, text, client) {
               action: {
                 type: 'uri',
                 label: '体験してみる 初回2,000円OFF',
-                uri: 'https://liff.line.me/2009962690-j5dQBfYL?menu=training&duration=60&trial=true',
+                uri: 'https://liff.line.me/2009962690-j5dQBfYL?menu=training&trial=true',
               },
               style: 'primary',
               color: '#2C5F3F',
