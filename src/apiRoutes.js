@@ -72,12 +72,27 @@ async function notifyOwnerCancellation(client, { date, time, endTime, menu, dura
 }
 
 /** オーナー向け新規予約通知 */
-async function notifyOwner(client, { date, time, endTime, menu, duration, name }) {
+async function notifyOwner(client, { date, time, endTime, menu, duration, name, userId }) {
   const ownerId = config.OWNER_LINE_USER_ID;
   if (!ownerId || !client) return;
   const menuName = config.MENUS[menu] || menu;
   const price = config.PRICES[parseInt(duration)];
   const dateJP = formatDateJP(date);
+
+  let lineDisplayName = null;
+  if (userId && !userId.startsWith('demo')) {
+    try {
+      const profile = await client.getProfile(userId);
+      lineDisplayName = profile.displayName;
+    } catch (e) {
+      console.warn('LINE表示名取得失敗:', e.message);
+    }
+  }
+
+  const nameLine = lineDisplayName && lineDisplayName !== name
+    ? `👤 ${name} 様\n💬 LINE名: ${lineDisplayName}\n`
+    : `👤 ${name} 様\n`;
+
   try {
     await client.pushMessage({
       to: ownerId,
@@ -85,7 +100,7 @@ async function notifyOwner(client, { date, time, endTime, menu, duration, name }
         type: 'text',
         text: (
           `🔔 新規予約が入りました！\n\n` +
-          `👤 ${name} 様\n` +
+          nameLine +
           `📋 ${menuName}\n` +
           `⏱ ${duration}分コース\n` +
           (price ? `💴 ¥${price.discounted.toLocaleString()}\n` : '') +
@@ -333,7 +348,7 @@ function createApiRoutes(lineClient) {
             if (legacyDetail) console.error('  LINE API エラー詳細:', JSON.stringify(legacyDetail));
           });
 
-        notifyOwner(lineClient, { date, time, endTime, menu, duration, name });
+        notifyOwner(lineClient, { date, time, endTime, menu, duration, name, userId });
       }
 
       res.status(201).json({
