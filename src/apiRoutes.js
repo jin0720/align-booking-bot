@@ -419,6 +419,30 @@ function createApiRoutes(lineClient) {
     }
   });
 
+  /**
+   * POST /api/admin/send-message
+   * Body: { ownerUserId, toUserId, message }
+   */
+  router.post('/admin/send-message', async (req, res) => {
+    const { ownerUserId, toUserId, message } = req.body;
+    if (!ownerUserId || ownerUserId !== config.OWNER_LINE_USER_ID) {
+      return res.status(403).json({ error: '認証エラー' });
+    }
+    if (!toUserId || !message) {
+      return res.status(400).json({ error: 'toUserId と message が必須です' });
+    }
+    if (!lineClient) {
+      return res.status(500).json({ error: 'LINE クライアント未初期化' });
+    }
+    try {
+      await lineClient.pushMessage({ to: toUserId, messages: [{ type: 'text', text: message }] });
+      res.json({ success: true });
+    } catch (err) {
+      console.error('admin/send-message エラー:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return router;
 }
 
