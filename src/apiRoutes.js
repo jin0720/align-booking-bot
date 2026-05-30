@@ -420,6 +420,14 @@ function createApiRoutes(lineClient) {
   });
 
   /**
+   * POST /api/log — クライアントからのエラーログ受信
+   */
+  router.post('/log', (req, res) => {
+    console.log('📱 クライアントログ:', JSON.stringify(req.body));
+    res.json({ ok: true });
+  });
+
+  /**
    * POST /api/admin/send-message
    * Body: { ownerUserId, toUserId, message }
    */
