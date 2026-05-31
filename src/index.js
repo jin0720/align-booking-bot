@@ -1,6 +1,7 @@
 // src/index.js - サーバーエントリーポイント
 require('dotenv').config();
 
+const path = require('path');
 const express = require('express');
 const { middleware, messagingApi } = require('@line/bot-sdk');
 const { handleEvent } = require('./lineHandler');
@@ -24,6 +25,9 @@ const app = express();
 
 // CORS ミドルウェア
 app.use(corsMiddleware);
+
+// 静的ファイル配信（サロン入口写真など）
+app.use('/static', express.static(path.join(__dirname, '../public')));
 
 // ヘルスチェック
 app.get('/', (req, res) => {

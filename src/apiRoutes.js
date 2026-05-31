@@ -43,6 +43,51 @@ function buildBookingConfirmMessage({ date, time, endTime, menu, duration, name 
   };
 }
 
+/** 予約確定後の場所案内メッセージ＋画像2枚 */
+const IMAGE_BASE = 'https://align-booking-bot.onrender.com/static';
+
+function buildLocationMessages(name, time, date) {
+  // 日本時間 (UTC+9) でtoday/tomorrowを計算
+  const nowJST = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const todayStr = nowJST.toISOString().slice(0, 10);
+  const tomorrowJST = new Date(nowJST);
+  tomorrowJST.setDate(tomorrowJST.getDate() + 1);
+  const tomorrowStr = tomorrowJST.toISOString().slice(0, 10);
+
+  let dayLabel;
+  if (date === todayStr)         dayLabel = '本日';
+  else if (date === tomorrowStr) dayLabel = '明日';
+  else {
+    const [, m, d] = date.split('-').map(Number);
+    dayLabel = `${m}月${d}日`;
+  }
+
+  const text =
+    `${name}さん、ご予約ありがとうございます！\n\n` +
+    `【サロン場所】\nhttps://maps.app.goo.gl/PHNZoRidbwHHJmAA8?g_st=ipc\n\n` +
+    `2階に上がったA号室になります。\n` +
+    `${dayLabel}${time}ごろお待ちしてます😊\n\n` +
+    `※自転車でお越しの際は、ご連絡いただけますようお願いいたします。\n\n` +
+    `【ご来店・ご退店の際のお願い】\n` +
+    `ご来店・ご退店の際は、近隣へのご配慮のため、静かにご入退店いただけますと幸いです。\n` +
+    `ご入室後は、通常どおりお話しいただいて問題ございません。\n\n` +
+    `ご理解とご協力のほど、よろしくお願いいたします🙇`;
+
+  return [
+    { type: 'text', text },
+    {
+      type: 'image',
+      originalContentUrl: `${IMAGE_BASE}/entrance-stairs.jpg`,
+      previewImageUrl: `${IMAGE_BASE}/entrance-stairs.jpg`,
+    },
+    {
+      type: 'image',
+      originalContentUrl: `${IMAGE_BASE}/entrance-door.jpg`,
+      previewImageUrl: `${IMAGE_BASE}/entrance-door.jpg`,
+    },
+  ];
+}
+
 /** オーナー向けキャンセル通知 */
 async function notifyOwnerCancellation(client, { date, time, endTime, menu, duration, name }) {
   const ownerId = config.OWNER_LINE_USER_ID;
@@ -347,6 +392,11 @@ function createApiRoutes(lineClient) {
             const legacyDetail = err?.originalError?.response?.data ?? err?.response?.data;
             if (legacyDetail) console.error('  LINE API エラー詳細:', JSON.stringify(legacyDetail));
           });
+
+        const locationMsgs = buildLocationMessages(name, time, date);
+        lineClient.pushMessage({ to: userId, messages: locationMsgs })
+          .then(() => console.log(`✅ [${userId}] 場所案内メッセージ送信完了`))
+          .catch(err => console.error(`❌ 場所案内送信失敗 [${userId}]:`, err.message));
 
         notifyOwner(lineClient, { date, time, endTime, menu, duration, name, userId });
       }
