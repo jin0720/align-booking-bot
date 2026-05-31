@@ -476,10 +476,7 @@ function createApiRoutes(lineClient) {
    */
   router.get('/admin/sales-report', async (req, res) => {
     try {
-      const { month, ownerUserId } = req.query;
-      if (!ownerUserId || ownerUserId !== config.OWNER_LINE_USER_ID) {
-        return res.status(403).json({ error: '認証エラー' });
-      }
+      const { month } = req.query;
       if (!month || !/^\d{4}-\d{2}$/.test(month)) {
         return res.status(400).json({ error: 'month は YYYY-MM 形式で指定してください' });
       }
