@@ -3,7 +3,7 @@
 // 各ユーザーの会話状態をメモリ上で管理する
 
 const config = require('./config');
-const { getAvailableSlots, saveBooking, saveBookingIfAvailable, getUserReservations, cancelBooking, updateTrainingBookingStatus, getTrainingBookingByRow } = require('./sheetsService');
+const { getAvailableSlots, saveBooking, saveBookingIfAvailable, getUserReservations, cancelBooking, updateTrainingBookingStatus, updateTrainingGym, createTrainingCalendarEvent, getTrainingBookingByRow } = require('./sheetsService');
 const {
   timeToMinutes, minutesToTime,
   formatDateJP, parseDate, parseTime, formatSlotsText,
@@ -865,7 +865,7 @@ async function handleBookingFlow(userId, text, client) {
     return [buildMassageLiffCard(greeting)];
   }
 
-  // ── オーナー操作: トレーニング予約確定 ──────────────────────────
+  // ── オーナー操作: トレーニング予約確定（ジム選択へ） ──────────────
   if (text.startsWith('training_confirm:')) {
     const parts = text.split(':');
     const rowIndex = parseInt(parts[1]);
@@ -875,11 +875,75 @@ async function handleBookingFlow(userId, text, client) {
       if (!booking) {
         return [{ type: 'text', text: '⚠️ 予約情報が見つかりませんでした。' }];
       }
-      await updateTrainingBookingStatus(rowIndex, '確定');
-
       const gyms = config.GYM_LOCATIONS;
-      const gymText = gyms.map((g, i) => `${i === 0 ? '①' : '②'}${g.name}\n　${g.address}`).join('\n');
+      return [{
+        type: 'flex',
+        altText: '🏋️ どのジムを予約しましたか？',
+        contents: {
+          type: 'bubble',
+          header: {
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: '#2C5F3F',
+            contents: [{
+              type: 'text',
+              text: '🏋️ どのジムを予約しましたか？',
+              color: '#ffffff',
+              weight: 'bold',
+              size: 'md',
+              wrap: true,
+            }],
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'sm',
+            contents: [
+              { type: 'text', text: `${booking.name}様の予約ジムを選択してください`, size: 'sm', wrap: true },
+              { type: 'text', text: `📅 ${formatDateJP(booking.date)}　${booking.time}〜${booking.endTime}`, size: 'xs', color: '#888888', wrap: true },
+            ],
+          },
+          footer: {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'sm',
+            contents: gyms.map((gym, i) => ({
+              type: 'button',
+              action: {
+                type: 'postback',
+                label: gym.label,
+                data: `training_gym_select:${rowIndex}:${customerUserId}:${i}`,
+              },
+              style: i === 0 ? 'primary' : 'secondary',
+              color: i === 0 ? '#2C5F3F' : undefined,
+            })),
+          },
+        },
+      }];
+    } catch (e) {
+      console.error('トレーニング確定処理エラー:', e.message);
+      return [{ type: 'text', text: '⚠️ 確定処理中にエラーが発生しました。' }];
+    }
+  }
 
+  // ── オーナー操作: ジム選択 → 予約確定 + お客様通知 ─────────────
+  if (text.startsWith('training_gym_select:')) {
+    const parts = text.split(':');
+    const rowIndex = parseInt(parts[1]);
+    const customerUserId = parts[2];
+    const gymIdx = parseInt(parts[3]);
+    const gym = config.GYM_LOCATIONS[gymIdx];
+    if (!gym) {
+      return [{ type: 'text', text: '⚠️ ジム情報が見つかりませんでした。' }];
+    }
+    try {
+      const booking = await getTrainingBookingByRow(rowIndex);
+      if (!booking) {
+        return [{ type: 'text', text: '⚠️ 予約情報が見つかりませんでした。' }];
+      }
+      await updateTrainingBookingStatus(rowIndex, '確定');
+      await updateTrainingGym(rowIndex, gym.name);
+      await createTrainingCalendarEvent(booking);
       await client.pushMessage({
         to: customerUserId,
         messages: [{
@@ -908,8 +972,10 @@ async function handleBookingFlow(userId, text, client) {
                 { type: 'text', text: `📅 ${formatDateJP(booking.date)}　${booking.time}〜${booking.endTime}`, size: 'sm', wrap: true },
                 { type: 'text', text: `⏱ パーソナルトレーニング ${booking.duration}分`, size: 'sm', wrap: true },
                 { type: 'separator', margin: 'md' },
-                { type: 'text', text: '📍 ご利用ジム（当日トレーナーがご案内）', size: 'xs', color: '#888888', margin: 'md' },
-                { type: 'text', text: gymText, size: 'sm', wrap: true },
+                { type: 'text', text: '📍 ご利用ジム', size: 'xs', color: '#888888', margin: 'md', weight: 'bold' },
+                { type: 'text', text: gym.label, size: 'sm', color: '#2C5F3F', weight: 'bold', wrap: true },
+                { type: 'text', text: gym.name, size: 'sm', wrap: true },
+                { type: 'text', text: gym.address, size: 'xs', color: '#555555', wrap: true },
                 { type: 'separator', margin: 'md' },
                 { type: 'text', text: '※ 動きやすい服装でお越しください😊', size: 'xs', color: '#888888', wrap: true },
               ],
@@ -917,9 +983,9 @@ async function handleBookingFlow(userId, text, client) {
           },
         }],
       });
-      return [{ type: 'text', text: `✅ ${booking.name}様に予約確定通知を送信しました！` }];
+      return [{ type: 'text', text: `✅ ${booking.name}様に予約確定通知を送信しました！\n📍 ${gym.label}` }];
     } catch (e) {
-      console.error('トレーニング確定処理エラー:', e.message);
+      console.error('トレーニングジム選択処理エラー:', e.message);
       return [{ type: 'text', text: '⚠️ 確定処理中にエラーが発生しました。' }];
     }
   }

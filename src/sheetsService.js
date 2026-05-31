@@ -543,7 +543,7 @@ async function ensureTrainingHeaders() {
   }
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.SPREADSHEET_ID,
-    range: `${config.TRAINING_SHEET_NAME}!A1:K1`,
+    range: `${config.TRAINING_SHEET_NAME}!A1:L1`,
   });
   if (!res.data.values?.[0]?.[0]) {
     await sheets.spreadsheets.values.update({
@@ -551,7 +551,7 @@ async function ensureTrainingHeaders() {
       range: `${config.TRAINING_SHEET_NAME}!A1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [['日付', '開始時間', '終了時間', 'メニュー', '時間（分）', 'お名前', 'LINE UserID', '予約日時', 'ステータス', '料金', '目標']],
+        values: [['日付', '開始時間', '終了時間', 'メニュー', '時間（分）', 'お名前', 'LINE UserID', '予約日時', 'ステータス', '料金', '目標', 'ジム']],
       },
     });
   }
@@ -584,6 +584,17 @@ async function saveTrainingBooking({ date, time, menu, duration, name, userId, g
   const rowIndex = match ? parseInt(match[1]) : null;
 
   return { endTime, rowIndex };
+}
+
+/** トレーニング予約確定時にL列へジム名を記録 */
+async function updateTrainingGym(rowIndex, gymName) {
+  const sheets = await getSheets();
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: config.SPREADSHEET_ID,
+    range: `${config.TRAINING_SHEET_NAME}!L${rowIndex}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[gymName]] },
+  });
 }
 
 /** トレーニング予約のステータスを更新 */
@@ -619,6 +630,24 @@ async function getTrainingBookingByRow(rowIndex) {
     price:    row[9],
     goals:    row[10],
   };
+}
+
+/** トレーニング予約確定時にGoogleカレンダーへイベントを追加 */
+async function createTrainingCalendarEvent({ date, time, endTime, name, duration }) {
+  try {
+    const calendar = await getCalendar();
+    await calendar.events.insert({
+      calendarId: config.CALENDAR_ID,
+      requestBody: {
+        summary: `【トレーニング予約】${name}様`,
+        description: `パーソナルトレーニング ${duration}分`,
+        start: { dateTime: `${date}T${time}:00+09:00`, timeZone: 'Asia/Tokyo' },
+        end:   { dateTime: `${date}T${endTime}:00+09:00`, timeZone: 'Asia/Tokyo' },
+      },
+    });
+  } catch (err) {
+    console.error('⚠️ トレーニングカレンダー追加失敗:', err.message);
+  }
 }
 
 /** ユーザーのトレーニング予約一覧を取得（仮予約・確定のみ、未来分） */
@@ -665,5 +694,6 @@ async function getUserTrainingReservations(userId) {
 module.exports = {
   getAvailableSlots, saveBooking, saveBookingIfAvailable, ensureHeaders,
   getUserReservations, cancelBooking, deleteCancelledRows, backfillPrices, ensureGoalSheet,
-  saveTrainingBooking, updateTrainingBookingStatus, getTrainingBookingByRow, getUserTrainingReservations,
+  saveTrainingBooking, updateTrainingBookingStatus, updateTrainingGym, createTrainingCalendarEvent,
+  getTrainingBookingByRow, getUserTrainingReservations,
 };
