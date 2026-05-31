@@ -691,9 +691,77 @@ async function getUserTrainingReservations(userId) {
   }
 }
 
+/** 月次売上レポートを生成（yearMonth: "2026-05" 形式） */
+async function getMonthlySalesReport(yearMonth) {
+  const sheets = await getSheets();
+  const calendar = await getCalendar();
+
+  // マッサージ予約シート
+  const massageRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.SPREADSHEET_ID,
+    range: `${config.SHEET_NAME}!A:J`,
+  });
+  const massageRows = (massageRes.data.values || []).slice(1);
+  const massageBookings = massageRows
+    .filter(r => r[0]?.startsWith(yearMonth) && r[8] === '確定')
+    .map(r => ({
+      date: r[0], time: r[1], endTime: r[2],
+      menu: r[3], duration: r[4], name: r[5],
+      status: r[8], price: parseInt(r[9]) || 0,
+    }));
+
+  // トレーニング予約シート
+  let trainingBookings = [];
+  try {
+    const trainingRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.SPREADSHEET_ID,
+      range: `${config.TRAINING_SHEET_NAME}!A:J`,
+    });
+    trainingBookings = (trainingRes.data.values || []).slice(1)
+      .filter(r => r[0]?.startsWith(yearMonth) && r[8] === '確定')
+      .map(r => ({
+        date: r[0], time: r[1], endTime: r[2],
+        menu: r[3], duration: r[4], name: r[5],
+        status: r[8], price: parseInt(r[9]) || 0,
+      }));
+  } catch (_) {}
+
+  // Googleカレンダー
+  const [y, m] = yearMonth.split('-');
+  const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+  const calRes = await calendar.events.list({
+    calendarId: config.CALENDAR_ID,
+    timeMin: `${yearMonth}-01T00:00:00+09:00`,
+    timeMax: `${yearMonth}-${String(lastDay).padStart(2,'0')}T23:59:59+09:00`,
+    singleEvents: true,
+    orderBy: 'startTime',
+    timeZone: 'Asia/Tokyo',
+    maxResults: 500,
+  });
+  const calEvents = (calRes.data.items || []).filter(e => e.status !== 'cancelled' && e.start?.dateTime);
+
+  const toJSTStr = (dt) => {
+    const d = new Date(dt);
+    return d.toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).replace(' ', 'T').substring(0, 16);
+  };
+
+  const sheetKeys = new Set(
+    [...massageBookings, ...trainingBookings].map(b => `${b.date}_${b.time}`)
+  );
+
+  const calendarOnly = calEvents
+    .map(e => {
+      const jst = toJSTStr(e.start.dateTime);
+      return { date: jst.substring(0,10), time: jst.substring(11,16), summary: e.summary };
+    })
+    .filter(e => !sheetKeys.has(`${e.date}_${e.time}`));
+
+  return { massageBookings, trainingBookings, calendarOnly };
+}
+
 module.exports = {
   getAvailableSlots, saveBooking, saveBookingIfAvailable, ensureHeaders,
   getUserReservations, cancelBooking, deleteCancelledRows, backfillPrices, ensureGoalSheet,
   saveTrainingBooking, updateTrainingBookingStatus, updateTrainingGym, createTrainingCalendarEvent,
-  getTrainingBookingByRow, getUserTrainingReservations,
+  getTrainingBookingByRow, getUserTrainingReservations, getMonthlySalesReport,
 };

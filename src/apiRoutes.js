@@ -10,6 +10,7 @@ const {
   updateTrainingBookingStatus,
   getTrainingBookingByRow,
   getUserTrainingReservations,
+  getMonthlySalesReport,
 } = require('./sheetsService');
 const config = require('./config');
 const { minutesToTime, timeToMinutes, formatDateJP } = require('./utils');
@@ -466,6 +467,37 @@ function createApiRoutes(lineClient) {
     } catch (error) {
       console.error('予約キャンセルエラー:', error);
       res.status(500).json({ error: '予約のキャンセルに失敗しました' });
+    }
+  });
+
+  /**
+   * GET /api/admin/sales-report
+   * Query: month (YYYY-MM), ownerUserId
+   */
+  router.get('/admin/sales-report', async (req, res) => {
+    try {
+      const { month, ownerUserId } = req.query;
+      if (!ownerUserId || ownerUserId !== config.OWNER_LINE_USER_ID) {
+        return res.status(403).json({ error: '認証エラー' });
+      }
+      if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+        return res.status(400).json({ error: 'month は YYYY-MM 形式で指定してください' });
+      }
+      const report = await getMonthlySalesReport(month);
+      const massageTotal  = report.massageBookings.reduce((s, b) => s + b.price, 0);
+      const trainingTotal = report.trainingBookings.reduce((s, b) => s + b.price, 0);
+      res.json({
+        month,
+        massageBookings:  report.massageBookings,
+        trainingBookings: report.trainingBookings,
+        calendarOnly:     report.calendarOnly,
+        massageTotal,
+        trainingTotal,
+        grandTotal: massageTotal + trainingTotal,
+      });
+    } catch (error) {
+      console.error('売上レポートエラー:', error);
+      res.status(500).json({ error: error.message });
     }
   });
 
