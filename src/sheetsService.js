@@ -191,10 +191,16 @@ async function getDaySettings(dateStr) {
     });
     const rows = (res.data.values || []).slice(1);
 
+    // Sheets が日付セルを "2026/6/3" 等に変換する場合を正規化
+    const normalizeKey = (k) => {
+      const m = k.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+      return m ? `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}` : k;
+    };
+
     let dateRow = null;
     let defaultRow = null;
     for (const row of rows) {
-      const key = (row[0] || '').trim();
+      const key = normalizeKey((row[0] || '').trim());
       if (key === dateStr) { dateRow = row; break; }
       if (key === 'デフォルト' || key === 'default' || key === '') defaultRow = row;
     }
