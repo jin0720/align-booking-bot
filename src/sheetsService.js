@@ -292,10 +292,11 @@ async function saveBooking({ date, time, menu, duration, name, userId }) {
   const endMinutes   = startMinutes + parseInt(duration);
 
   // 深夜またぎ対応: start/end ともに 1440分(24:00)以上は翌日換算
+  // toISOString() は UTC 日付を返すため JST がズレる → ローカル日付演算で計算
   const shiftDay = (dateStr) => {
-    const d = new Date(`${dateStr}T00:00:00+09:00`);
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().slice(0, 10);
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const next = new Date(y, m - 1, d + 1);
+    return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
   };
 
   const calStartDateStr = startMinutes >= 1440 ? shiftDay(date) : date;
