@@ -840,4 +840,5 @@ module.exports = {
   getUserReservations, cancelBooking, deleteCancelledRows, backfillPrices, ensureGoalSheet,
   saveTrainingBooking, updateTrainingBookingStatus, updateTrainingGym, createTrainingCalendarEvent,
   getTrainingBookingByRow, getUserTrainingReservations, getMonthlySalesReport,
+  getDaySettings,
 };
