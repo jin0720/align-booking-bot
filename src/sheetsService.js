@@ -288,20 +288,28 @@ async function getAvailableSlots(dateStr, duration) {
 async function saveBooking({ date, time, menu, duration, name, userId }) {
   await ensureHeaders();
   const sheets = await getSheets();
-  const endMinutes = timeToMinutes(time) + parseInt(duration);
+  const startMinutes = timeToMinutes(time);
+  const endMinutes   = startMinutes + parseInt(duration);
 
-  // 深夜またぎ対応
-  let calEndDateStr = date;
-  let calEndMinutes = endMinutes;
-  let endTimeDisplay;
+  // 深夜またぎ対応: start/end ともに 1440分(24:00)以上は翌日換算
+  const shiftDay = (dateStr) => {
+    const d = new Date(`${dateStr}T00:00:00+09:00`);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  };
+
+  const calStartDateStr = startMinutes >= 1440 ? shiftDay(date) : date;
+  const calStartTime    = startMinutes >= 1440 ? minutesToTime(startMinutes - 1440) : time;
+
+  let calEndDateStr, calEndMinutes, endTimeDisplay;
   if (endMinutes >= 1440) {
-    const nextDay = new Date(`${date}T00:00:00+09:00`);
-    nextDay.setDate(nextDay.getDate() + 1);
-    calEndDateStr = nextDay.toISOString().slice(0, 10);
-    calEndMinutes = endMinutes - 1440;
-    endTimeDisplay = `翌${minutesToTime(calEndMinutes)}`;
+    calEndDateStr   = shiftDay(date);
+    calEndMinutes   = endMinutes - 1440;
+    endTimeDisplay  = `翌${minutesToTime(calEndMinutes)}`;
   } else {
-    endTimeDisplay = minutesToTime(endMinutes);
+    calEndDateStr   = date;
+    calEndMinutes   = endMinutes;
+    endTimeDisplay  = minutesToTime(endMinutes);
   }
 
   const menuName   = config.MENUS[menu] || menu;
@@ -325,7 +333,7 @@ async function saveBooking({ date, time, menu, duration, name, userId }) {
       requestBody: {
         summary: `【LINE予約】${name}様 (${menuName})`,
         description: `LINEからの予約です。\nお名前: ${name}様\n時間: ${duration}分`,
-        start: { dateTime: `${date}T${time}:00+09:00`, timeZone: 'Asia/Tokyo' },
+        start: { dateTime: `${calStartDateStr}T${calStartTime}:00+09:00`, timeZone: 'Asia/Tokyo' },
         end:   { dateTime: `${calEndDateStr}T${minutesToTime(calEndMinutes)}:00+09:00`, timeZone: 'Asia/Tokyo' },
       },
     });
