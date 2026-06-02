@@ -11,7 +11,6 @@ const {
   getTrainingBookingByRow,
   getUserTrainingReservations,
   getMonthlySalesReport,
-  getDaySettings,
 } = require('./sheetsService');
 const config = require('./config');
 const { minutesToTime, timeToMinutes, formatDateJP } = require('./utils');
@@ -502,27 +501,6 @@ function createApiRoutes(lineClient) {
   /**
    * POST /api/log — クライアントからのエラーログ受信
    */
-  /** GET /api/debug/day-settings?date=YYYY-MM-DD — 営業設定シートの読み取り内容を確認（一時デバッグ用） */
-  router.get('/debug/day-settings', async (req, res) => {
-    const { date } = req.query;
-    if (!date) return res.status(400).json({ error: 'date required' });
-    try {
-      const { google } = require('googleapis');
-      const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-      const auth = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
-      const sheets = google.sheets({ version: 'v4', auth });
-      const raw = await sheets.spreadsheets.values.get({
-        spreadsheetId: config.SPREADSHEET_ID,
-        range: `${config.SETTINGS_SHEET_NAME}!A:E`,
-      });
-      const rows = raw.data.values || [];
-      const settings = await getDaySettings(date);
-      res.json({ rawRows: rows, resolvedSettings: settings });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
   router.post('/log', (req, res) => {
     console.log('📱 クライアントログ:', JSON.stringify(req.body));
     res.json({ ok: true });
