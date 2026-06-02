@@ -165,10 +165,12 @@ async function getReservationsForDate(dateStr) {
   return rows.slice(1).filter(row => row[0] === dateStr && row[8] === '確定');
 }
 
-/** "10:00" や "24:00" を分換算整数に変換。無効値は null を返す */
+/** "10:00" / "24:00" / "24:00:00"(Sheets秒付き) を分換算整数に変換。無効値は null */
 function parseSettingTime(str) {
   if (!str || typeof str !== 'string') return null;
-  const match = str.trim().match(/^(\d{1,2}):(\d{2})$/);
+  // Sheets は時刻セルを "HH:MM:SS" で返すことがあるため秒部分を除去
+  const normalized = str.trim().replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1');
+  const match = normalized.match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return null;
   const min = parseInt(match[2]);
   if (min < 0 || min >= 60) return null;
