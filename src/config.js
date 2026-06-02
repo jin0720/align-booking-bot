@@ -63,6 +63,7 @@ module.exports = {
   // ─── Google Sheets & Calendar ─────────────────────────────
   SPREADSHEET_ID: process.env.GOOGLE_SPREADSHEET_ID,
   SHEET_NAME: '予約一覧',
+  SETTINGS_SHEET_NAME: '営業設定',
   CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID,
 
   // ─── オーナー情報 ─────────────────────────────────────────

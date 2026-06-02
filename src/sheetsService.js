@@ -165,9 +165,59 @@ async function getReservationsForDate(dateStr) {
   return rows.slice(1).filter(row => row[0] === dateStr && row[8] === '確定');
 }
 
+/** "10:00" や "24:00" を分換算整数に変換。無効値は null を返す */
+function parseSettingTime(str) {
+  if (!str || typeof str !== 'string') return null;
+  const match = str.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const min = parseInt(match[2]);
+  if (min < 0 || min >= 60) return null;
+  return parseInt(match[1]) * 60 + min;
+}
+
+/** 営業設定シートから指定日の設定を取得（日付一致→デフォルト行→ハードコード値の順） */
+async function getDaySettings(dateStr) {
+  const DEFAULTS = {
+    businessStart:     config.BUSINESS_START,
+    businessEnd:       config.BUSINESS_END,
+    lastStartOverride: null,
+    leadTime:          60,
+  };
+  try {
+    const sheets = await getSheets();
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.SPREADSHEET_ID,
+      range: `${config.SETTINGS_SHEET_NAME}!A:E`,
+    });
+    const rows = (res.data.values || []).slice(1);
+
+    let dateRow = null;
+    let defaultRow = null;
+    for (const row of rows) {
+      const key = (row[0] || '').trim();
+      if (key === dateStr) { dateRow = row; break; }
+      if (key === 'デフォルト' || key === 'default' || key === '') defaultRow = row;
+    }
+
+    const src = dateRow || defaultRow;
+    if (!src) return DEFAULTS;
+
+    return {
+      businessStart:     parseSettingTime(src[1]) ?? DEFAULTS.businessStart,
+      businessEnd:       parseSettingTime(src[2]) ?? DEFAULTS.businessEnd,
+      lastStartOverride: parseSettingTime(src[3] || '') ?? null,
+      leadTime:          parseInt(src[4]) || DEFAULTS.leadTime,
+    };
+  } catch (err) {
+    console.error('⚠️ [getDaySettings] 設定取得失敗、デフォルト値を使用:', err.message);
+    return DEFAULTS;
+  }
+}
+
 /** 空き時間を取得 */
 async function getAvailableSlots(dateStr, duration) {
-  const { BUSINESS_START, BUSINESS_END, SLOT_INTERVAL } = config;
+  const { businessStart, businessEnd, lastStartOverride, leadTime } = await getDaySettings(dateStr);
+  const SLOT_INTERVAL = config.SLOT_INTERVAL;
   
   // 空き時間の判定はGoogleカレンダーを唯一のソースとする
   // (スプレッドシートはログ・記録用とし、カレンダーから削除すれば予約可能になるようにする)
@@ -192,12 +242,18 @@ async function getAvailableSlots(dateStr, duration) {
   }
   
   const todayStr = `${y}-${m}-${d}`;
-  const nowMinutes = (dateStr === todayStr) ? (hh * 60 + mm + 60) : 0;
+  const nowMinutes = (dateStr === todayStr) ? (hh * 60 + mm + leadTime) : 0;
 
-  const lastStart = BUSINESS_END - duration;
+  let lastStart;
+  if (lastStartOverride !== null) {
+    lastStart = lastStartOverride;
+  } else {
+    const rawLastStart = businessEnd - duration;
+    lastStart = Math.ceil(rawLastStart / SLOT_INTERVAL) * SLOT_INTERVAL;
+  }
   const available = [];
 
-  for (let t = BUSINESS_START; t <= lastStart; t += SLOT_INTERVAL) {
+  for (let t = businessStart; t <= lastStart; t += SLOT_INTERVAL) {
     if (t < nowMinutes) continue;
     const slotEnd = t + duration;
     let isAvailable = true;
@@ -225,7 +281,21 @@ async function saveBooking({ date, time, menu, duration, name, userId }) {
   await ensureHeaders();
   const sheets = await getSheets();
   const endMinutes = timeToMinutes(time) + parseInt(duration);
-  const endTime    = minutesToTime(endMinutes);
+
+  // 深夜またぎ対応
+  let calEndDateStr = date;
+  let calEndMinutes = endMinutes;
+  let endTimeDisplay;
+  if (endMinutes >= 1440) {
+    const nextDay = new Date(`${date}T00:00:00+09:00`);
+    nextDay.setDate(nextDay.getDate() + 1);
+    calEndDateStr = nextDay.toISOString().slice(0, 10);
+    calEndMinutes = endMinutes - 1440;
+    endTimeDisplay = `翌${minutesToTime(calEndMinutes)}`;
+  } else {
+    endTimeDisplay = minutesToTime(endMinutes);
+  }
+
   const menuName   = config.MENUS[menu] || menu;
   const now        = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
   const price      = config.PRICES[parseInt(duration)]?.discounted ?? '';
@@ -235,7 +305,7 @@ async function saveBooking({ date, time, menu, duration, name, userId }) {
     range: `${config.SHEET_NAME}!A:J`,
     valueInputOption: 'USER_ENTERED',
     requestBody: {
-      values: [[date, time, endTime, menuName, duration, name, userId, now, '確定', price]],
+      values: [[date, time, endTimeDisplay, menuName, duration, name, userId, now, '確定', price]],
     },
   });
 
@@ -248,14 +318,14 @@ async function saveBooking({ date, time, menu, duration, name, userId }) {
         summary: `【LINE予約】${name}様 (${menuName})`,
         description: `LINEからの予約です。\nお名前: ${name}様\n時間: ${duration}分`,
         start: { dateTime: `${date}T${time}:00+09:00`, timeZone: 'Asia/Tokyo' },
-        end:   { dateTime: `${date}T${endTime}:00+09:00`, timeZone: 'Asia/Tokyo' },
+        end:   { dateTime: `${calEndDateStr}T${minutesToTime(calEndMinutes)}:00+09:00`, timeZone: 'Asia/Tokyo' },
       },
     });
   } catch (err) {
     console.error('⚠️ カレンダー追加失敗:', err.message);
   }
 
-  return endTime;
+  return endTimeDisplay;
 }
 
 /** ユーザーの未来の予約を取得 */
