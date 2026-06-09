@@ -429,7 +429,9 @@ async function cancelBooking({ rowIndex, date, time, name }) {
       const d = new Date(dt);
       return d.toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).replace(' ', 'T').substring(0, 16);
     };
-    const expectedStart = `${date}T${time}`;
+    // HH:MM:SS 形式の場合は HH:MM に正規化（toJSTStr は16文字返すため）
+    const normalizedTime = time.substring(0, 5);
+    const expectedStart = `${date}T${normalizedTime}`;
     const targetEvent = events.find(e =>
       e.summary && e.summary.includes(name) &&
       e.start && e.start.dateTime &&
