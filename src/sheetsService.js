@@ -212,7 +212,12 @@ async function getDaySettings(dateStr) {
 
     return {
       businessStart:     parseSettingTime(src[1]) ?? DEFAULTS.businessStart,
-      businessEnd:       parseSettingTime(src[2]) ?? DEFAULTS.businessEnd,
+      businessEnd:       (() => {
+        const val = parseSettingTime(src[2]);
+        if (val === null) return DEFAULTS.businessEnd;
+        if (val === 0) return 24 * 60; // Sheetsが "0:00:00" で返す深夜0時 → 24:00(1440分)として扱う
+        return val;
+      })(),
       lastStartOverride: parseSettingTime(src[3] || '') ?? null,
       leadTime:          parseInt(src[4]) || DEFAULTS.leadTime,
     };
@@ -725,13 +730,16 @@ async function getTrainingBookingByRow(rowIndex) {
 async function createTrainingCalendarEvent({ date, time, endTime, name, duration }) {
   try {
     const calendar = await getCalendar();
+    // カレンダーは実施時間+30分で枠を押さえる（準備・片付け含む）
+    const calEndMinutes = timeToMinutes(endTime) + 30;
+    const calEndTime = minutesToTime(calEndMinutes);
     await calendar.events.insert({
       calendarId: config.CALENDAR_ID,
       requestBody: {
         summary: `【トレーニング予約】${name}様`,
         description: `パーソナルトレーニング ${duration}分`,
         start: { dateTime: `${date}T${time}:00+09:00`, timeZone: 'Asia/Tokyo' },
-        end:   { dateTime: `${date}T${endTime}:00+09:00`, timeZone: 'Asia/Tokyo' },
+        end:   { dateTime: `${date}T${calEndTime}:00+09:00`, timeZone: 'Asia/Tokyo' },
       },
     });
   } catch (err) {
