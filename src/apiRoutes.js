@@ -459,6 +459,13 @@ function createApiRoutes(lineClient) {
         return res.status(400).json({ error: '日付、時間、名前が必須です' });
       }
 
+      const [cy, cm, cd] = date.split('-').map(Number);
+      const cancelDeadline = new Date(cy, cm - 1, cd - 1);
+      cancelDeadline.setHours(23, 0, 0, 0);
+      if (new Date() >= cancelDeadline) {
+        return res.status(400).json({ error: '前日23時を過ぎているため、キャンセルできません。' });
+      }
+
       await cancelBooking({ rowIndex: parseInt(rowIndex), date, time, name });
       res.json({ success: true, message: '予約がキャンセルされました' });
 
