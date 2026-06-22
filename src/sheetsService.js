@@ -228,8 +228,11 @@ async function getDaySettings(dateStr) {
 }
 
 /** 空き時間を取得 */
-async function getAvailableSlots(dateStr, duration) {
-  const { businessStart, businessEnd, lastStartOverride, leadTime } = await getDaySettings(dateStr);
+async function getAvailableSlots(dateStr, duration, menu = '') {
+  let { businessStart, businessEnd, lastStartOverride, leadTime } = await getDaySettings(dateStr);
+  if (config.TRAINING_MENUS && config.TRAINING_MENUS[menu]) {
+    businessStart = Math.min(businessStart, config.TRAINING_BUSINESS_START);
+  }
   const SLOT_INTERVAL = config.SLOT_INTERVAL;
   
   // 空き時間の判定はGoogleカレンダーを唯一のソースとする

@@ -278,11 +278,11 @@ function createApiRoutes(lineClient) {
 
   /**
    * GET /api/availability
-   * Query: date (YYYY-MM-DD), duration (分数)
+   * Query: date (YYYY-MM-DD), duration (分数), menu (オプション)
    */
   router.get('/availability', async (req, res) => {
     try {
-      const { date, duration } = req.query;
+      const { date, duration, menu = '' } = req.query;
 
       if (!date || !duration) {
         return res.status(400).json({ error: '日付 (date) と時間 (duration) が必須です' });
@@ -291,7 +291,7 @@ function createApiRoutes(lineClient) {
         return res.status(400).json({ error: '日付形式が不正です (YYYY-MM-DD)' });
       }
 
-      const slots = await getAvailableSlots(date, parseInt(duration));
+      const slots = await getAvailableSlots(date, parseInt(duration), menu);
       res.json({ date, duration, slots });
     } catch (error) {
       console.error('可用枠取得エラー:', error);
