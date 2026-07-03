@@ -102,6 +102,7 @@ async function getCalendarEvents(dateStr) {
 
           start = getJSTTime(startDate);
           end   = getJSTTime(endDate);
+          if (end < start) end += 1440; // 深夜またぎ: 00:10終了 → 1450分に補正
         } else if (e.start.date) {
           // 終日予定
           start = 0;
