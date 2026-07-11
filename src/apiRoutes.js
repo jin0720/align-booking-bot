@@ -261,14 +261,12 @@ function createApiRoutes(lineClient) {
           160: config.PRICES[160],
         },
       }));
-      const trainingMenus = Object.entries(config.TRAINING_MENUS).map(([key, value]) => ({
-        id: key,
-        name: value,
-        prices: {
-          60: config.TRAINING_PRICES[60],
-          90: config.TRAINING_PRICES[90],
-        },
-      }));
+      const trainingMenus = Object.entries(config.TRAINING_MENUS).map(([key, value]) => {
+        const durations = config.TRAINING_MENU_DURATIONS?.[key] || Object.keys(config.TRAINING_PRICES).map(Number);
+        const prices = {};
+        durations.forEach(d => { prices[d] = config.TRAINING_PRICES[d]; });
+        return { id: key, name: value, prices };
+      });
       res.json([...massageMenus, ...trainingMenus]);
     } catch (error) {
       console.error('メニュー取得エラー:', error);

@@ -25,12 +25,25 @@ module.exports = {
   // ─── トレーニングメニュー ──────────────────────────────────
   TRAINING_MENUS: {
     training: 'パーソナルトレーニング',
+    training_early: '早朝パーソナル',
   },
 
   // ─── トレーニング料金 ──────────────────────────────────────
   TRAINING_PRICES: {
+    50: { original: 7000,  discounted: 7000,  label: '50分' },
     60: { original: 10000, discounted: 9000,  label: '60分' },
     90: { original: 13000, discounted: 12000, label: '90分' },
+  },
+
+  // ─── トレーニングメニューID→提供時間(分)（/api/menus 組み立て用） ──
+  TRAINING_MENU_DURATIONS: {
+    training: [60, 90],
+    training_early: [50],
+  },
+
+  // ─── メニューID別の受付終了時刻（分換算・早朝パーソナルは9:30まで） ──
+  TRAINING_MENU_END: {
+    training_early: 9 * 60 + 30,
   },
 
   // ─── トレーニング予約締切（前日この時間まで） ──────────────

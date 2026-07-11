@@ -268,6 +268,11 @@ async function getAvailableSlots(dateStr, duration, menu = '') {
     const rawLastStart = businessEnd - duration;
     lastStart = Math.ceil(rawLastStart / SLOT_INTERVAL) * SLOT_INTERVAL;
   }
+  if (config.TRAINING_MENU_END && config.TRAINING_MENU_END[menu] != null) {
+    const rawEarlyLastStart = config.TRAINING_MENU_END[menu] - duration;
+    const earlyLastStart = Math.floor(rawEarlyLastStart / SLOT_INTERVAL) * SLOT_INTERVAL;
+    lastStart = Math.min(lastStart, earlyLastStart);
+  }
   const available = [];
 
   for (let t = businessStart; t <= lastStart; t += SLOT_INTERVAL) {
