@@ -41,8 +41,8 @@ module.exports = {
     training_early: [50],
   },
 
-  // ─── メニューID別の受付終了時刻（分換算・早朝パーソナルは9:30まで） ──
-  TRAINING_MENU_END: {
+  // ─── メニューID別の最終予約開始時刻（分換算・早朝パーソナルは9:30スタートまで） ──
+  TRAINING_MENU_LAST_START: {
     training_early: 9 * 60 + 30,
   },
 
