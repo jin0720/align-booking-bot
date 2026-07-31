@@ -1,6 +1,34 @@
 // src/config.js - サロン設定 (ここを変更してカスタマイズ)
 require('dotenv').config();
 
+// ─── キャンペーン割引（1,000円OFF）終了日時 ───────────────────
+// この日時（JST）以降は自動的に discounted === original（通常料金）になる
+const CAMPAIGN_END = new Date('2026-08-01T00:00:00+09:00');
+const isCampaignActive = () => new Date() < CAMPAIGN_END;
+
+/** キャンペーン終了後は discounted を original に揃えて返す */
+function applyCampaign(prices) {
+  if (isCampaignActive()) return prices;
+  const result = {};
+  for (const [key, price] of Object.entries(prices)) {
+    result[key] = { ...price, discounted: price.original };
+  }
+  return result;
+}
+
+const BASE_PRICES = {
+  70:  { original: 10000, discounted: 9000,  label: '70分' },
+  100: { original: 13000, discounted: 12000, label: '100分' },
+  130: { original: 16000, discounted: 15000, label: '130分' },
+  160: { original: 19000, discounted: 18000, label: '160分' },
+};
+
+const BASE_TRAINING_PRICES = {
+  50: { original: 7000,  discounted: 7000,  label: '50分' },
+  60: { original: 10000, discounted: 9000,  label: '60分' },
+  90: { original: 13000, discounted: 12000, label: '90分' },
+};
+
 module.exports = {
   // ─── メニュー ───────────────────────────────────────────
   MENUS: {
@@ -9,11 +37,9 @@ module.exports = {
   },
 
   // ─── 料金（定価・割引後） ────────────────────────────────
-  PRICES: {
-    70:  { original: 10000, discounted: 9000,  label: '70分' },
-    100: { original: 13000, discounted: 12000, label: '100分' },
-    130: { original: 16000, discounted: 15000, label: '130分' },
-    160: { original: 19000, discounted: 18000, label: '160分' },
+  // アクセスするたびに現在時刻でキャンペーン判定を行う（要 = getter）
+  get PRICES() {
+    return applyCampaign(BASE_PRICES);
   },
 
   // ─── 営業時間 ────────────────────────────────────────────
@@ -29,10 +55,8 @@ module.exports = {
   },
 
   // ─── トレーニング料金 ──────────────────────────────────────
-  TRAINING_PRICES: {
-    50: { original: 7000,  discounted: 7000,  label: '50分' },
-    60: { original: 10000, discounted: 9000,  label: '60分' },
-    90: { original: 13000, discounted: 12000, label: '90分' },
+  get TRAINING_PRICES() {
+    return applyCampaign(BASE_TRAINING_PRICES);
   },
 
   // ─── トレーニングメニューID→提供時間(分)（/api/menus 組み立て用） ──

@@ -169,7 +169,9 @@ function buildWelcomeMessages() {
 /** コース選択 Flex */
 function buildDurationMessage(menuName) {
   const durations = Object.entries(config.PRICES).map(([key, price]) => ({
-    label: `${price.label} ${price.original.toLocaleString()}→${price.discounted.toLocaleString()}円`,
+    label: price.original !== price.discounted
+      ? `${price.label} ${price.original.toLocaleString()}→${price.discounted.toLocaleString()}円`
+      : `${price.label} ${price.discounted.toLocaleString()}円`,
     value: key
   }));
 
@@ -341,7 +343,9 @@ function buildConfirmMessage(session) {
                   { type: 'text', text: '料金', size: 'sm', color: '#aaaaaa', flex: 2 },
                   {
                     type: 'text',
-                    text: `¥${price.original.toLocaleString()} → ¥${price.discounted.toLocaleString()}\n(オープン記念1,000円OFF)`,
+                    text: price.original !== price.discounted
+                      ? `¥${price.original.toLocaleString()} → ¥${price.discounted.toLocaleString()}\n(オープン記念1,000円OFF)`
+                      : `¥${price.discounted.toLocaleString()}`,
                     size: 'sm',
                     color: '#666666',
                     flex: 4,
