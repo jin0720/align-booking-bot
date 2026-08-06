@@ -77,7 +77,7 @@ module.exports = {
   // ─── トレーニングメニュー ──────────────────────────────────
   TRAINING_MENUS: {
     training: 'パーソナルトレーニング',
-    training_early: '早朝パーソナル',
+    training_early: '早朝パーソナル(6時〜9時スタート)',
     training_first: '初回パーソナルトレーニング(1000円OFF)',
   },
 
@@ -93,9 +93,9 @@ module.exports = {
     training_first: [60, 90],
   },
 
-  // ─── メニューID別の最終予約開始時刻（分換算・早朝パーソナルは9:30スタートまで） ──
+  // ─── メニューID別の最終予約開始時刻（分換算・早朝パーソナルは9:00スタートまで） ──
   TRAINING_MENU_LAST_START: {
-    training_early: 9 * 60 + 30,
+    training_early: 9 * 60,
   },
 
   // ─── トレーニング予約締切（前日この時間まで） ──────────────
