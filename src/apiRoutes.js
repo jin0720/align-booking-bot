@@ -251,23 +251,31 @@ function createApiRoutes(lineClient) {
    */
   router.get('/menus', (req, res) => {
     try {
-      const massageMenus = Object.entries(config.MENUS).map(([key, value]) => ({
-        id: key,
-        name: value,
-        prices: {
-          70:  config.PRICES[70],
-          100: config.PRICES[100],
-          130: config.PRICES[130],
-          160: config.PRICES[160],
-        },
-      }));
+      const massageMenus = Object.entries(config.MENUS).map(([key, value]) => {
+        const priceTable = config.FIRST_TIME_MENU_IDS.has(key) ? config.FIRST_TIME_PRICES : config.PRICES;
+        return {
+          id: key,
+          name: value,
+          prices: {
+            70:  priceTable[70],
+            100: priceTable[100],
+            130: priceTable[130],
+            160: priceTable[160],
+          },
+        };
+      });
       const trainingMenus = Object.entries(config.TRAINING_MENUS).map(([key, value]) => {
-        const durations = config.TRAINING_MENU_DURATIONS?.[key] || Object.keys(config.TRAINING_PRICES).map(Number);
+        const priceTable = config.FIRST_TIME_MENU_IDS.has(key) ? config.TRAINING_FIRST_PRICES : config.TRAINING_PRICES;
+        const durations = config.TRAINING_MENU_DURATIONS?.[key] || Object.keys(priceTable).map(Number);
         const prices = {};
-        durations.forEach(d => { prices[d] = config.TRAINING_PRICES[d]; });
+        durations.forEach(d => { prices[d] = priceTable[d]; });
         return { id: key, name: value, prices };
       });
-      res.json([...massageMenus, ...trainingMenus]);
+      const menusById = new Map([...massageMenus, ...trainingMenus].map(m => [m.id, m]));
+      const orderedMenus = config.MENU_DISPLAY_ORDER
+        .map(id => menusById.get(id))
+        .filter(Boolean);
+      res.json(orderedMenus);
     } catch (error) {
       console.error('メニュー取得エラー:', error);
       res.status(500).json({ error: 'メニュー取得に失敗しました' });

@@ -29,11 +29,26 @@ const BASE_TRAINING_PRICES = {
   90: { original: 13000, discounted: 12000, label: '90分' },
 };
 
+// ─── 初回限定1,000円OFF（常設・期限なし） ──────────────────────
+const BASE_FIRST_TIME_PRICES = {
+  70:  { original: 10000, discounted: 9000,  label: '70分' },
+  100: { original: 13000, discounted: 12000, label: '100分' },
+  130: { original: 16000, discounted: 15000, label: '130分' },
+  160: { original: 19000, discounted: 18000, label: '160分' },
+};
+
+const BASE_TRAINING_FIRST_PRICES = {
+  60: { original: 10000, discounted: 9000,  label: '60分' },
+  90: { original: 13000, discounted: 12000, label: '90分' },
+};
+
 module.exports = {
   // ─── メニュー ───────────────────────────────────────────
   MENUS: {
     oil: 'オイルマッサージ',
     seitai: '整体',
+    oil_first: '初回オイルマッサージ(1000円OFF)',
+    seitai_first: '初回整体(1000円OFF)',
   },
 
   // ─── 料金（定価・割引後） ────────────────────────────────
@@ -41,6 +56,16 @@ module.exports = {
   get PRICES() {
     return applyCampaign(BASE_PRICES);
   },
+
+  // ─── 初回限定1,000円OFF料金（期限なし・常設） ──────────────
+  FIRST_TIME_PRICES: BASE_FIRST_TIME_PRICES,
+  TRAINING_FIRST_PRICES: BASE_TRAINING_FIRST_PRICES,
+
+  // ─── 初回限定メニューID一覧（FIRST_TIME_PRICES系を使うID） ──
+  FIRST_TIME_MENU_IDS: new Set(['oil_first', 'seitai_first', 'training_first']),
+
+  // ─── /api/menus のレスポンス表示順 ──────────────────────
+  MENU_DISPLAY_ORDER: ['oil', 'seitai', 'training', 'training_early', 'oil_first', 'seitai_first', 'training_first'],
 
   // ─── 営業時間 ────────────────────────────────────────────
   BUSINESS_START:          10 * 60,  // 10:00 (分換算) ── マッサージ
@@ -52,6 +77,7 @@ module.exports = {
   TRAINING_MENUS: {
     training: 'パーソナルトレーニング',
     training_early: '早朝パーソナル',
+    training_first: '初回パーソナルトレーニング(1000円OFF)',
   },
 
   // ─── トレーニング料金 ──────────────────────────────────────
@@ -63,6 +89,7 @@ module.exports = {
   TRAINING_MENU_DURATIONS: {
     training: [60, 90],
     training_early: [50],
+    training_first: [60, 90],
   },
 
   // ─── メニューID別の最終予約開始時刻（分換算・早朝パーソナルは9:30スタートまで） ──
