@@ -25,6 +25,7 @@ const BASE_PRICES = {
 
 const BASE_TRAINING_PRICES = {
   50: { original: 7000,  discounted: 7000,  label: '50分' },
+  80: { original: 10000, discounted: 10000, label: '80分' },
   60: { original: 10000, discounted: 9000,  label: '60分' },
   90: { original: 13000, discounted: 12000, label: '90分' },
 };
@@ -88,7 +89,7 @@ module.exports = {
   // ─── トレーニングメニューID→提供時間(分)（/api/menus 組み立て用） ──
   TRAINING_MENU_DURATIONS: {
     training: [60, 90],
-    training_early: [50],
+    training_early: [50, 80],
     training_first: [60, 90],
   },
 
