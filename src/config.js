@@ -43,14 +43,37 @@ const BASE_TRAINING_FIRST_PRICES = {
   90: { original: 13000, discounted: 12000, label: '90分' },
 };
 
+// ─── メニュー ───────────────────────────────────────────
+const MENUS = {
+  oil: 'オイルマッサージ',
+  seitai: '整体',
+  oil_first: '初回オイルマッサージ(1000円OFF)',
+  seitai_first: '初回整体(1000円OFF)',
+};
+
+// ─── トレーニングメニュー ──────────────────────────────────
+const TRAINING_MENUS = {
+  training: 'パーソナルトレーニング',
+  training_early: '早朝パーソナル(6時〜9時スタート)',
+  training_first: '初回パーソナルトレーニング(1000円OFF)',
+};
+
+// ─── 初回限定メニューID一覧（FIRST_TIME_PRICES系を使うID） ──
+const FIRST_TIME_MENU_IDS = new Set(['oil_first', 'seitai_first', 'training_first']);
+
+/** メニューID・時間(分)から正しい価格テーブルを引く（マッサージ/トレーニング・初回限定を自動判定） */
+function getPrice(menuId, duration) {
+  const isTraining = !!TRAINING_MENUS[menuId];
+  const isFirstTime = FIRST_TIME_MENU_IDS.has(menuId);
+  const table = isFirstTime
+    ? (isTraining ? BASE_TRAINING_FIRST_PRICES : BASE_FIRST_TIME_PRICES)
+    : (isTraining ? applyCampaign(BASE_TRAINING_PRICES) : applyCampaign(BASE_PRICES));
+  return table[duration];
+}
+
 module.exports = {
   // ─── メニュー ───────────────────────────────────────────
-  MENUS: {
-    oil: 'オイルマッサージ',
-    seitai: '整体',
-    oil_first: '初回オイルマッサージ(1000円OFF)',
-    seitai_first: '初回整体(1000円OFF)',
-  },
+  MENUS,
 
   // ─── 料金（定価・割引後） ────────────────────────────────
   // アクセスするたびに現在時刻でキャンペーン判定を行う（要 = getter）
@@ -63,7 +86,10 @@ module.exports = {
   TRAINING_FIRST_PRICES: BASE_TRAINING_FIRST_PRICES,
 
   // ─── 初回限定メニューID一覧（FIRST_TIME_PRICES系を使うID） ──
-  FIRST_TIME_MENU_IDS: new Set(['oil_first', 'seitai_first', 'training_first']),
+  FIRST_TIME_MENU_IDS,
+
+  // ─── メニューID・時間からその組み合わせの正しい価格を返す ──
+  getPrice,
 
   // ─── /api/menus のレスポンス表示順 ──────────────────────
   MENU_DISPLAY_ORDER: ['oil', 'seitai', 'training', 'training_early', 'oil_first', 'seitai_first', 'training_first'],
@@ -75,11 +101,7 @@ module.exports = {
   SLOT_INTERVAL:           30,        // 30分刻み
 
   // ─── トレーニングメニュー ──────────────────────────────────
-  TRAINING_MENUS: {
-    training: 'パーソナルトレーニング',
-    training_early: '早朝パーソナル(6時〜9時スタート)',
-    training_first: '初回パーソナルトレーニング(1000円OFF)',
-  },
+  TRAINING_MENUS,
 
   // ─── トレーニング料金 ──────────────────────────────────────
   get TRAINING_PRICES() {

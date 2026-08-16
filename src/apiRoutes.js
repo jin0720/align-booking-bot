@@ -20,7 +20,7 @@ const router = express.Router();
 /** 予約確定通知メッセージ */
 function buildBookingConfirmMessage({ date, time, endTime, menu, duration, name }) {
   const menuName = config.MENUS[menu] || menu;
-  const price = config.PRICES[parseInt(duration)];
+  const price = config.getPrice(menu, parseInt(duration));
   const dateJP = formatDateJP(date);
 
   return {
@@ -122,7 +122,7 @@ async function notifyOwner(client, { date, time, endTime, menu, duration, name, 
   const ownerId = config.OWNER_LINE_USER_ID;
   if (!ownerId || !client) return;
   const menuName = config.MENUS[menu] || menu;
-  const price = config.PRICES[parseInt(duration)];
+  const price = config.getPrice(menu, parseInt(duration));
   const dateJP = formatDateJP(date);
 
   let lineDisplayName = null;

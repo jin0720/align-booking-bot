@@ -327,7 +327,7 @@ async function saveBooking({ date, time, menu, duration, name, userId }) {
 
   const menuName   = config.MENUS[menu] || menu;
   const now        = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
-  const price      = config.PRICES[parseInt(duration)]?.discounted ?? '';
+  const price      = config.getPrice(menu, parseInt(duration))?.discounted ?? '';
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: config.SPREADSHEET_ID,
@@ -666,7 +666,7 @@ async function saveTrainingBooking({ date, time, menu, duration, name, userId, g
   const endTime    = minutesToTime(endMinutes);
   const menuName   = config.TRAINING_MENUS[menu] || menu;
   const now        = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
-  const price      = config.TRAINING_PRICES[parseInt(duration)]?.discounted ?? '';
+  const price      = config.getPrice(menu, parseInt(duration))?.discounted ?? '';
   const goalsStr   = goals.join('、');
 
   const appendRes = await sheets.spreadsheets.values.append({
