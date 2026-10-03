@@ -129,7 +129,7 @@ async function ensureHeaders() {
   const sheets = await getSheets();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.SPREADSHEET_ID,
-    range: `${config.SHEET_NAME}!A1:J1`,
+    range: `${config.SHEET_NAME}!A1:K1`,
   });
   const headerRow = res.data.values?.[0] || [];
   if (!headerRow[0]) {
@@ -139,7 +139,7 @@ async function ensureHeaders() {
       range: `${config.SHEET_NAME}!A1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [['日付', '開始時間', '終了時間', 'メニュー', '時間（分）', 'お名前', 'LINE UserID', '予約日時', 'ステータス', '料金']],
+        values: [['日付', '開始時間', '終了時間', 'メニュー', '時間（分）', 'お名前', 'LINE UserID', '予約日時', 'ステータス', '料金', 'ご要望']],
       },
     });
   } else if (!headerRow[9]) {
@@ -149,7 +149,17 @@ async function ensureHeaders() {
       range: `${config.SHEET_NAME}!J1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [['料金']],
+        values: [['料金', 'ご要望']],
+      },
+    });
+  } else if (!headerRow[10]) {
+    // 既存シートにK1（ご要望）を追加
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.SPREADSHEET_ID,
+      range: `${config.SHEET_NAME}!K1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [['ご要望']],
       },
     });
   }
@@ -297,7 +307,7 @@ async function getAvailableSlots(dateStr, duration, menu = '') {
 }
 
 /** 予約を保存 */
-async function saveBooking({ date, time, menu, duration, name, userId }) {
+async function saveBooking({ date, time, menu, duration, name, userId, comment = '' }) {
   await ensureHeaders();
   const sheets = await getSheets();
   const startMinutes = timeToMinutes(time);
@@ -331,10 +341,10 @@ async function saveBooking({ date, time, menu, duration, name, userId }) {
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: config.SPREADSHEET_ID,
-    range: `${config.SHEET_NAME}!A:J`,
+    range: `${config.SHEET_NAME}!A:K`,
     valueInputOption: 'USER_ENTERED',
     requestBody: {
-      values: [[date, time, endTimeDisplay, menuName, duration, name, userId, now, '確定', price]],
+      values: [[date, time, endTimeDisplay, menuName, duration, name, userId, now, '確定', price, comment]],
     },
   });
 
@@ -607,7 +617,7 @@ function withSlotQueue(key, fn) {
 }
 
 // 空き確認→保存をアトミックに実行。埋まっている場合は err.code === 'SLOT_TAKEN' をスロー。
-async function saveBookingIfAvailable({ date, time, menu, duration, name, userId }) {
+async function saveBookingIfAvailable({ date, time, menu, duration, name, userId, comment = '' }) {
   const slotKey = `${date}_${time}`;
   return withSlotQueue(slotKey, async () => {
     const availableSlots = await getAvailableSlots(date, parseInt(duration));
@@ -617,7 +627,7 @@ async function saveBookingIfAvailable({ date, time, menu, duration, name, userId
       err.availableSlots = availableSlots;
       throw err;
     }
-    return saveBooking({ date, time, menu, duration, name, userId });
+    return saveBooking({ date, time, menu, duration, name, userId, comment });
   });
 }
 
@@ -644,7 +654,7 @@ async function ensureTrainingHeaders() {
   }
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.SPREADSHEET_ID,
-    range: `${config.TRAINING_SHEET_NAME}!A1:L1`,
+    range: `${config.TRAINING_SHEET_NAME}!A1:M1`,
   });
   if (!res.data.values?.[0]?.[0]) {
     await sheets.spreadsheets.values.update({
@@ -652,14 +662,21 @@ async function ensureTrainingHeaders() {
       range: `${config.TRAINING_SHEET_NAME}!A1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [['日付', '開始時間', '終了時間', 'メニュー', '時間（分）', 'お名前', 'LINE UserID', '予約日時', 'ステータス', '料金', '目標', 'ジム']],
+        values: [['日付', '開始時間', '終了時間', 'メニュー', '時間（分）', 'お名前', 'LINE UserID', '予約日時', 'ステータス', '料金', '目標', 'ジム', 'ご要望']],
       },
+    });
+  } else if (!res.data.values[0][12]) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.SPREADSHEET_ID,
+      range: `${config.TRAINING_SHEET_NAME}!M1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [['ご要望']] },
     });
   }
 }
 
 /** トレーニング仮予約を保存（ステータス: 仮予約）。rowIndex を返す */
-async function saveTrainingBooking({ date, time, menu, duration, name, userId, goals = [] }) {
+async function saveTrainingBooking({ date, time, menu, duration, name, userId, goals = [], comment = '' }) {
   await ensureTrainingHeaders();
   const sheets = await getSheets();
   const endMinutes = timeToMinutes(time) + parseInt(duration);
@@ -671,11 +688,11 @@ async function saveTrainingBooking({ date, time, menu, duration, name, userId, g
 
   const appendRes = await sheets.spreadsheets.values.append({
     spreadsheetId: config.SPREADSHEET_ID,
-    range: `${config.TRAINING_SHEET_NAME}!A:K`,
+    range: `${config.TRAINING_SHEET_NAME}!A:M`,
     valueInputOption: 'USER_ENTERED',
     includeValuesInResponse: true,
     requestBody: {
-      values: [[date, time, endTime, menuName, duration, name, userId, now, '仮予約', price, goalsStr]],
+      values: [[date, time, endTime, menuName, duration, name, userId, now, '仮予約', price, goalsStr, '', comment]],
     },
   });
 

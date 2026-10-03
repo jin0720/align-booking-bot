@@ -119,7 +119,7 @@ async function notifyOwnerCancellation(client, { date, time, endTime, menu, dura
 }
 
 /** オーナー向け新規予約通知 */
-async function notifyOwner(client, { date, time, endTime, menu, duration, name, userId }) {
+async function notifyOwner(client, { date, time, endTime, menu, duration, name, userId, comment }) {
   const ownerId = config.OWNER_LINE_USER_ID;
   if (!ownerId || !client) return;
   const menuName = config.MENUS[menu] || menu;
@@ -152,7 +152,8 @@ async function notifyOwner(client, { date, time, endTime, menu, duration, name, 
           `⏱ ${duration}分コース\n` +
           (price ? `💴 ¥${price.discounted.toLocaleString()}\n` : '') +
           `📅 ${dateJP}\n` +
-          `🕐 ${time}〜${endTime}`
+          `🕐 ${time}〜${endTime}` +
+          (comment ? `\n\n📝 ご要望:\n${comment}` : '')
         ),
       }, userId)],
     });
@@ -164,7 +165,7 @@ async function notifyOwner(client, { date, time, endTime, menu, duration, name, 
 }
 
 /** トレーニング仮予約オーナー通知 Flex */
-async function notifyOwnerTraining(client, { rowIndex, date, time, endTime, duration, name, userId, goals }) {
+async function notifyOwnerTraining(client, { rowIndex, date, time, endTime, duration, name, userId, goals, comment }) {
   const ownerId = config.OWNER_LINE_USER_ID;
   if (!ownerId || !client) return;
   const dateJP = formatDateJP(date);
@@ -204,6 +205,10 @@ async function notifyOwnerTraining(client, { rowIndex, date, time, endTime, dura
               { type: 'separator', margin: 'md' },
               { type: 'text', text: '🎯 目標', size: 'xs', color: '#888888', margin: 'md' },
               { type: 'text', text: goalsText, size: 'sm', wrap: true },
+              ...(comment ? [
+                { type: 'text', text: '📝 ご要望', size: 'xs', color: '#888888', margin: 'md' },
+                { type: 'text', text: comment, size: 'sm', wrap: true },
+              ] : []),
             ],
           },
           footer: {
@@ -308,11 +313,15 @@ function createApiRoutes(lineClient) {
 
   /**
    * POST /api/bookings
-   * Body: { date, time, menu, duration, name, userId, goals? }
+   * Body: { date, time, menu, duration, name, userId, goals?, comment? }
+   * comment は note / remarks / request / message でも受け付ける
    */
   router.post('/bookings', async (req, res) => {
     try {
       const { date, time, menu, duration, name, userId, goals } = req.body;
+      const rawComment = [req.body.comment, req.body.note, req.body.remarks, req.body.request, req.body.message]
+        .find(v => typeof v === 'string' && v.trim());
+      const comment = rawComment ? rawComment.trim().slice(0, 500) : '';
 
       if (!date || !time || !menu || !duration || !name || !userId) {
         return res.status(400).json({ error: '必須フィールドが不足しています' });
@@ -334,7 +343,7 @@ function createApiRoutes(lineClient) {
         }
 
         const { endTime, rowIndex } = await saveTrainingBooking({
-          date, time, menu, duration, name, userId,
+          date, time, menu, duration, name, userId, comment,
           goals: Array.isArray(goals) ? goals : [],
         });
 
@@ -356,7 +365,7 @@ function createApiRoutes(lineClient) {
 
           // オーナーへ Flex 通知
           notifyOwnerTraining(lineClient, {
-            rowIndex, date, time, endTime, duration, name, userId,
+            rowIndex, date, time, endTime, duration, name, userId, comment,
             goals: Array.isArray(goals) ? goals : [],
           });
         }
@@ -372,7 +381,7 @@ function createApiRoutes(lineClient) {
       // ── 通常予約（マッサージ・整体） ─────────────────────────
       let endTime;
       try {
-        endTime = await saveBookingIfAvailable({ date, time, menu, duration, name, userId });
+        endTime = await saveBookingIfAvailable({ date, time, menu, duration, name, userId, comment });
       } catch (err) {
         if (err.code === 'SLOT_TAKEN') {
           return res.status(409).json({
@@ -406,7 +415,7 @@ function createApiRoutes(lineClient) {
           .then(() => console.log(`✅ [${userId}] 場所案内メッセージ送信完了`))
           .catch(err => console.error(`❌ 場所案内送信失敗 [${userId}]:`, err.message));
 
-        notifyOwner(lineClient, { date, time, endTime, menu, duration, name, userId });
+        notifyOwner(lineClient, { date, time, endTime, menu, duration, name, userId, comment });
       }
 
       res.status(201).json({
