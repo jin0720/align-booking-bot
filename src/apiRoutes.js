@@ -13,6 +13,7 @@ const {
   getMonthlySalesReport,
 } = require('./sheetsService');
 const config = require('./config');
+const { withOwnerReplyButton, addOwnerReplyButtonToBubble } = require('./contactButtons');
 const { minutesToTime, timeToMinutes, formatDateJP } = require('./utils');
 
 const router = express.Router();
@@ -135,14 +136,14 @@ async function notifyOwner(client, { date, time, endTime, menu, duration, name, 
     }
   }
 
-  const nameLine = lineDisplayName && lineDisplayName !== name
+  const nameLine = lineDisplayName
     ? `👤 ${name} 様\n💬 LINE名: ${lineDisplayName}\n`
     : `👤 ${name} 様\n`;
 
   try {
     await client.pushMessage({
       to: ownerId,
-      messages: [{
+      messages: [withOwnerReplyButton({
         type: 'text',
         text: (
           `🔔 新規予約が入りました！\n\n` +
@@ -153,7 +154,7 @@ async function notifyOwner(client, { date, time, endTime, menu, duration, name, 
           `📅 ${dateJP}\n` +
           `🕐 ${time}〜${endTime}`
         ),
-      }],
+      }, userId)],
     });
     console.log('🔔 オーナーへ通知送信完了');
   } catch (err) {
@@ -177,7 +178,7 @@ async function notifyOwnerTraining(client, { rowIndex, date, time, endTime, dura
       messages: [{
         type: 'flex',
         altText: `🏋️ トレーニング仮予約: ${name}様 ${dateJP} ${time}〜`,
-        contents: {
+        contents: addOwnerReplyButtonToBubble({
           type: 'bubble',
           header: {
             type: 'box',
@@ -231,7 +232,7 @@ async function notifyOwnerTraining(client, { rowIndex, date, time, endTime, dura
               },
             ],
           },
-        },
+        }, userId),
       }],
     });
     console.log('🏋️ オーナーへトレーニング仮予約通知送信完了');

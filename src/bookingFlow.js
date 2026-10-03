@@ -3,6 +3,7 @@
 // 各ユーザーの会話状態をメモリ上で管理する
 
 const config = require('./config');
+const { OWNER_REPLY_PREFIX } = require('./contactButtons');
 const { getAvailableSlots, saveBooking, saveBookingIfAvailable, getUserReservations, cancelBooking, updateTrainingBookingStatus, updateTrainingGym, createTrainingCalendarEvent, getTrainingBookingByRow } = require('./sheetsService');
 const {
   timeToMinutes, minutesToTime,
@@ -855,6 +856,37 @@ async function handleBookingFlow(userId, text, client) {
   // ── IDチェック要求 (デバッグ用) ─────────────────────────────
   if (text.includes('自分のID') || text.includes('userid') || text === 'ID') {
     return [{ type: 'text', text: `あなたのLINE User IDは：\n${userId}` }];
+  }
+
+  // ── 予約アプリ(LIFF)が予約完了時に自動送信するメッセージ ───────
+  // チャット履歴を残すためだけの送信なので返信しない（確認メッセージは別途 push 済み）
+  if (text.startsWith('【予約完了】')) return [];
+
+  // ── オーナー操作: お客様へ返信（宛先選択） ────────────────────
+  if (text.startsWith(OWNER_REPLY_PREFIX)) {
+    if (userId !== config.OWNER_LINE_USER_ID) return [];
+    const customerUserId = text.slice(OWNER_REPLY_PREFIX.length);
+    let customerName = 'お客様';
+    try {
+      const profile = await client.getProfile(customerUserId);
+      if (profile.displayName) customerName = `${profile.displayName}様`;
+    } catch (e) {}
+    setSession(userId, { step: 'owner_reply', customerUserId, customerName });
+    return [{ type: 'text', text: `${customerName}へ送信する文章を入力してください。\n（やめる場合は「キャンセル」と送信）` }];
+  }
+
+  // ── オーナー操作: お客様への返信文を入力中 ───────────────────
+  if (session.step === 'owner_reply') {
+    const { customerUserId, customerName } = session;
+    clearSession(userId);
+    if (text === 'キャンセル') return [{ type: 'text', text: '返信をキャンセルしました。' }];
+    try {
+      await client.pushMessage({ to: customerUserId, messages: [{ type: 'text', text }] });
+      return [{ type: 'text', text: `✅ ${customerName}へ送信しました。` }];
+    } catch (e) {
+      console.error('お客様への返信送信失敗:', e.message);
+      return [{ type: 'text', text: `⚠️ ${customerName}への送信に失敗しました（ブロックされている可能性があります）。` }];
+    }
   }
 
   // ── 予約開始トリガー → LIFFミニアプリへ誘導 ─────────────────
