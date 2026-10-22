@@ -77,6 +77,9 @@ module.exports = {
     button: 'My bookings',
   },
 
+  // ─── 質問の受付 (リッチメニュー「質問する」) ─────────────
+  questionReply: 'Thank you for reaching out 😊\nPlease send your question in this chat.\nWe will check it and get back to you as soon as we can.',
+
   // ─── トレーニング案内 ──────────────────────────────────
   trainingEntry: {
     altText: (greet) => `${greet}welcome to Personal Training!`,

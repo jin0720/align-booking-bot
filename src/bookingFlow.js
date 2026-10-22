@@ -4,7 +4,7 @@
 
 const config = require('./config');
 const { getUserLang, t } = require('./i18n');
-const { OWNER_REPLY_PREFIX } = require('./contactButtons');
+const { OWNER_REPLY_PREFIX, withOwnerReplyButton } = require('./contactButtons');
 const { getAvailableSlots, saveBooking, saveBookingIfAvailable, getUserReservations, cancelBooking, updateTrainingBookingStatus, updateTrainingGym, createTrainingCalendarEvent, getTrainingBookingByRow } = require('./sheetsService');
 const {
   timeToMinutes, minutesToTime,
@@ -42,6 +42,10 @@ const EN_TRIGGER = new Set(['book', 'booking', 'book a massage', 'massage bookin
 const EN_LIST = new Set(['my bookings', 'my reservations', 'check booking', 'check reservation', 'view booking', 'view reservations', 'cancel booking', 'cancel reservation', 'change or cancel']);
 const EN_TRAINING = new Set(['training', 'personal training', 'training consultation', 'training inquiry']);
 const enText = (text) => text.trim().toLowerCase();
+
+// リッチメニュー「質問する」。タップすると「質問する」と送信される設定にしておく
+const QUESTION_KEYWORDS = new Set(['質問する', '質問', '質問したい', 'question', 'questions', 'ask a question', 'ask']);
+const isQuestionTriggered = (text) => QUESTION_KEYWORDS.has(enText(text));
 
 function isTriggered(text) {
   return TRIGGER_KEYWORDS.some(k => text === k) || EN_TRIGGER.has(enText(text));
@@ -925,6 +929,28 @@ async function handleBookingFlow(userId, text, client) {
       displayName = profile.displayName || '';
     } catch (e) {}
     return [buildMassageLiffCard(lang)];
+  }
+
+  // ── 質問する → 受付の案内 + オーナーへ通知（返信ボタン付き） ──────────
+  if (isQuestionTriggered(text)) {
+    let displayName = '';
+    try {
+      const profile = await client.getProfile(userId);
+      displayName = profile.displayName || '';
+    } catch (e) {}
+
+    const ownerId = config.OWNER_LINE_USER_ID;
+    if (ownerId) {
+      client.pushMessage({
+        to: ownerId,
+        messages: [withOwnerReplyButton({
+          type: 'text',
+          text: `❓ 質問したいお客様がいます\n\n👤 ${displayName || userId}\n${lang === 'en' ? '🌐 お客様の言語: English\n' : ''}\nお客様から質問が届きます。下のボタンから返信できます。`,
+        }, userId)],
+      }).catch(e => console.error('オーナー質問通知失敗:', e.message));
+    }
+
+    return [{ type: 'text', text: T.questionReply }];
   }
 
   // ── オーナー操作: トレーニング予約確定（ジム選択へ） ──────────────
