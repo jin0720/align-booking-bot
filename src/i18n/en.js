@@ -122,8 +122,7 @@ module.exports = {
     altText: '✅ Your training session is confirmed',
     header: '✅ Your training session is confirmed',
     session: (n) => `⏱ Personal Training - ${n} min`,
-    gymTitle: '📍 Your gym',
-    mapButton: 'Open in Google Maps',
+    changedNote: '* Your session time has been adjusted. We look forward to seeing you at the time above.',
     note: '* Please wear comfortable clothes 😊',
   },
   proposeTime: {

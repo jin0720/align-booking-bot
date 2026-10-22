@@ -81,8 +81,7 @@ module.exports = {
     altText: '✅ トレーニング予約が確定しました',
     header: '✅ トレーニング予約が確定しました',
     session: (n) => `⏱ パーソナルトレーニング ${n}分`,
-    gymTitle: '📍 ご利用ジム',
-    mapButton: 'Googleマップで開く',
+    changedNote: '※ ご予約の日時が調整されました。上記の日時でお待ちしております。',
     note: '※ 動きやすい服装でお越しください😊',
   },
   proposeTime: {

@@ -5,7 +5,7 @@
 const config = require('./config');
 const { getUserLang, t } = require('./i18n');
 const { OWNER_REPLY_PREFIX, withOwnerReplyButton } = require('./contactButtons');
-const { getAvailableSlots, saveBooking, saveBookingIfAvailable, getUserReservations, cancelBooking, updateTrainingBookingStatus, updateTrainingGym, createTrainingCalendarEvent, getTrainingBookingByRow } = require('./sheetsService');
+const { getAvailableSlots, saveBooking, saveBookingIfAvailable, getUserReservations, cancelBooking, updateTrainingBookingStatus, updateTrainingBookingTime, createTrainingCalendarEvent, getTrainingBookingByRow } = require('./sheetsService');
 const {
   timeToMinutes, minutesToTime,
   formatDateJP, parseDate, parseTime, formatSlotsText,
@@ -867,6 +867,112 @@ function buildTrainingNextActionMessage(userId, session, lang) {
 }
 
 // ────────────────────────────────────────────────────────────────
+// トレーニング仮予約の確定（オーナー操作）
+// ────────────────────────────────────────────────────────────────
+
+/** 「この時間で確定しますか？」確認Flex */
+function buildTrainingTimeCheckMessage(booking, customerUserId) {
+  const { rowIndex } = booking;
+  return {
+    type: 'flex',
+    altText: '🏋️ この時間で確定しますか？',
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#2C5F3F',
+        contents: [{ type: 'text', text: '🏋️ この時間で確定しますか？', color: '#ffffff', weight: 'bold', size: 'md', wrap: true }],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          { type: 'text', text: `${booking.name}様`, size: 'sm', wrap: true },
+          { type: 'text', text: `📅 ${formatDateJP(booking.date)}　${booking.time}〜${booking.endTime}`, size: 'sm', wrap: true },
+          { type: 'text', text: `⏱ ${booking.duration}分`, size: 'xs', color: '#888888' },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'button',
+            action: { type: 'postback', label: '✅ この時間で確定', data: `training_finalize:${rowIndex}:${customerUserId}` },
+            style: 'primary',
+            color: '#2C5F3F',
+          },
+          {
+            type: 'button',
+            action: { type: 'postback', label: '⏰ 時間を変更して確定', data: `training_change_time:${rowIndex}:${customerUserId}` },
+            style: 'secondary',
+          },
+        ],
+      },
+    },
+  };
+}
+
+/**
+ * 仮予約を確定し、お客様へ予約完了LINEを送る。
+ * newTime を渡すと日時を書き換えてから確定する（終了時刻は分数から再計算）。
+ */
+async function finalizeTrainingBooking(client, rowIndex, customerUserId, changed, newTime) {
+  const booking = await getTrainingBookingByRow(rowIndex);
+  if (!booking || booking.userId !== customerUserId) {
+    return [{ type: 'text', text: '⚠️ 予約情報が見つかりませんでした。' }];
+  }
+  if (booking.status !== '仮予約') {
+    return [{ type: 'text', text: `⚠️ この予約はすでに処理済みです（${booking.status}）。` }];
+  }
+  if (newTime) {
+    booking.date = newTime.date;
+    booking.time = newTime.time;
+    booking.endTime = minutesToTime(timeToMinutes(newTime.time) + parseInt(booking.duration));
+    await updateTrainingBookingTime(rowIndex, booking.date, booking.time, booking.endTime);
+  }
+  await updateTrainingBookingStatus(rowIndex, '確定');
+  await createTrainingCalendarEvent(booking);
+  // お客様に届くメッセージは、お客様の言語で送る
+  const CT = t(await getUserLang(client, customerUserId));
+  const bodyContents = [
+    { type: 'text', text: `📅 ${CT.formatDate(booking.date)}　${booking.time}〜${booking.endTime}`, size: 'sm', wrap: true },
+    { type: 'text', text: CT.gymConfirm.session(booking.duration), size: 'sm', wrap: true },
+  ];
+  if (changed) {
+    bodyContents.push({ type: 'text', text: CT.gymConfirm.changedNote, size: 'xs', color: '#8C7A6B', wrap: true });
+  }
+  bodyContents.push(
+    { type: 'separator', margin: 'md' },
+    { type: 'text', text: CT.gymConfirm.note, size: 'xs', color: '#888888', wrap: true },
+  );
+  await client.pushMessage({
+    to: customerUserId,
+    messages: [{
+      type: 'flex',
+      altText: CT.gymConfirm.altText,
+      contents: {
+        type: 'bubble',
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#2C5F3F',
+          contents: [{ type: 'text', text: CT.gymConfirm.header, color: '#ffffff', weight: 'bold', size: 'md', wrap: true }],
+        },
+        body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: bodyContents },
+      },
+    }],
+  });
+  return [{
+    type: 'text',
+    text: `✅ ${booking.name}様に予約確定通知を送信しました！\n📅 ${formatDateJP(booking.date)}　${booking.time}〜${booking.endTime}${changed ? '（日時変更あり）' : ''}`,
+  }];
+}
+
+// ────────────────────────────────────────────────────────────────
 // メインフロー
 // ────────────────────────────────────────────────────────────────
 
@@ -953,141 +1059,81 @@ async function handleBookingFlow(userId, text, client) {
     return [{ type: 'text', text: T.questionReply }];
   }
 
-  // ── オーナー操作: トレーニング予約確定（ジム選択へ） ──────────────
+  // ── オーナー操作: トレーニング予約確定（時間はそのままか確認） ────────
   if (text.startsWith('training_confirm:')) {
     const parts = text.split(':');
     const rowIndex = parseInt(parts[1]);
     const customerUserId = parts[2];
     try {
       const booking = await getTrainingBookingByRow(rowIndex);
-      if (!booking) {
+      if (!booking || booking.userId !== customerUserId) {
         return [{ type: 'text', text: '⚠️ 予約情報が見つかりませんでした。' }];
       }
-      const gyms = config.GYM_LOCATIONS;
-      return [{
-        type: 'flex',
-        altText: '🏋️ どのジムを予約しましたか？',
-        contents: {
-          type: 'bubble',
-          header: {
-            type: 'box',
-            layout: 'vertical',
-            backgroundColor: '#2C5F3F',
-            contents: [{
-              type: 'text',
-              text: '🏋️ どのジムを予約しましたか？',
-              color: '#ffffff',
-              weight: 'bold',
-              size: 'md',
-              wrap: true,
-            }],
-          },
-          body: {
-            type: 'box',
-            layout: 'vertical',
-            spacing: 'sm',
-            contents: [
-              { type: 'text', text: `${booking.name}様の予約ジムを選択してください`, size: 'sm', wrap: true },
-              { type: 'text', text: `📅 ${formatDateJP(booking.date)}　${booking.time}〜${booking.endTime}`, size: 'xs', color: '#888888', wrap: true },
-            ],
-          },
-          footer: {
-            type: 'box',
-            layout: 'vertical',
-            spacing: 'sm',
-            contents: gyms.map((gym, i) => ({
-              type: 'button',
-              action: {
-                type: 'postback',
-                label: gym.label,
-                data: `training_gym_select:${rowIndex}:${customerUserId}:${i}`,
-              },
-              style: i === 0 ? 'primary' : 'secondary',
-              color: i === 0 ? '#2C5F3F' : undefined,
-            })),
-          },
-        },
-      }];
+      if (booking.status !== '仮予約') {
+        return [{ type: 'text', text: `⚠️ この予約はすでに処理済みです（${booking.status}）。` }];
+      }
+      return [buildTrainingTimeCheckMessage(booking, customerUserId)];
     } catch (e) {
       console.error('トレーニング確定処理エラー:', e.message);
       return [{ type: 'text', text: '⚠️ 確定処理中にエラーが発生しました。' }];
     }
   }
 
-  // ── オーナー操作: ジム選択 → 予約確定 + お客様通知 ─────────────
-  if (text.startsWith('training_gym_select:')) {
+  // ── オーナー操作: この時間で確定 + お客様通知 ────────────────────
+  // （旧ジム選択ボタンの postback も、ジム番号を無視して同じ処理に流す）
+  if (text.startsWith('training_finalize:') || text.startsWith('training_gym_select:')) {
     const parts = text.split(':');
     const rowIndex = parseInt(parts[1]);
     const customerUserId = parts[2];
-    const gymIdx = parseInt(parts[3]);
-    const gym = config.GYM_LOCATIONS[gymIdx];
-    if (!gym) {
-      return [{ type: 'text', text: '⚠️ ジム情報が見つかりませんでした。' }];
+    try {
+      return await finalizeTrainingBooking(client, rowIndex, customerUserId, false);
+    } catch (e) {
+      console.error('トレーニング確定処理エラー:', e.message);
+      return [{ type: 'text', text: '⚠️ 確定処理中にエラーが発生しました。' }];
     }
+  }
+
+  // ── オーナー操作: 時間を変更して確定（日時入力へ） ────────────────
+  if (text.startsWith('training_change_time:')) {
+    const parts = text.split(':');
+    const rowIndex = parseInt(parts[1]);
+    const customerUserId = parts[2];
     try {
       const booking = await getTrainingBookingByRow(rowIndex);
-      if (!booking) {
+      if (!booking || booking.userId !== customerUserId) {
         return [{ type: 'text', text: '⚠️ 予約情報が見つかりませんでした。' }];
       }
-      await updateTrainingBookingStatus(rowIndex, '確定');
-      await updateTrainingGym(rowIndex, gym.name);
-      await createTrainingCalendarEvent(booking);
-      // お客様に届くメッセージは、お客様の言語で送る
-      const CT = t(await getUserLang(client, customerUserId));
-      const shownGym = (CT.gyms && CT.gyms[gymIdx]) || gym;
-      await client.pushMessage({
-        to: customerUserId,
-        messages: [{
-          type: 'flex',
-          altText: CT.gymConfirm.altText,
-          contents: {
-            type: 'bubble',
-            header: {
-              type: 'box',
-              layout: 'vertical',
-              backgroundColor: '#2C5F3F',
-              contents: [{
-                type: 'text',
-                text: CT.gymConfirm.header,
-                color: '#ffffff',
-                weight: 'bold',
-                size: 'md',
-                wrap: true,
-              }],
-            },
-            body: {
-              type: 'box',
-              layout: 'vertical',
-              spacing: 'sm',
-              contents: [
-                { type: 'text', text: `📅 ${CT.formatDate(booking.date)}　${booking.time}〜${booking.endTime}`, size: 'sm', wrap: true },
-                { type: 'text', text: CT.gymConfirm.session(booking.duration), size: 'sm', wrap: true },
-                { type: 'separator', margin: 'md' },
-                { type: 'text', text: CT.gymConfirm.gymTitle, size: 'xs', color: '#888888', margin: 'md', weight: 'bold' },
-                { type: 'text', text: shownGym.label, size: 'sm', color: '#2C5F3F', weight: 'bold', wrap: true },
-                { type: 'text', text: shownGym.name, size: 'sm', wrap: true },
-                { type: 'text', text: shownGym.address, size: 'xs', color: '#555555', wrap: true },
-                {
-                  type: 'button',
-                  action: {
-                    type: 'uri',
-                    label: CT.gymConfirm.mapButton,
-                    uri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(gym.address)}`,
-                  },
-                  style: 'link',
-                  color: '#2C5F3F',
-                  margin: 'xs',
-                },
-                { type: 'separator', margin: 'sm' },
-                { type: 'text', text: CT.gymConfirm.note, size: 'xs', color: '#888888', wrap: true },
-              ],
-            },
-          },
-        }],
-      });
-      return [{ type: 'text', text: `✅ ${booking.name}様に予約確定通知を送信しました！\n📍 ${gym.label}` }];
+      if (booking.status !== '仮予約') {
+        return [{ type: 'text', text: `⚠️ この予約はすでに処理済みです（${booking.status}）。` }];
+      }
+      setSession(userId, { step: 'owner_change_time', rowIndex, customerUserId });
+      return [{ type: 'text', text: `${booking.name}様の新しい日時を入力してください。\n例: 10月23日 14:00\n（${booking.duration}分で確定します。やめる場合は「キャンセル」と送信）` }];
     } catch (e) {
-      console.error('トレーニングジム選択処理エラー:', e.message);
+      console.error('トレーニング時間変更エラー:', e.message);
+      return [{ type: 'text', text: '⚠️ エラーが発生しました。' }];
+    }
+  }
+
+  // ── オーナー操作: 変更後の日時を入力中 ──────────────────────────
+  if (session.step === 'owner_change_time') {
+    const { rowIndex, customerUserId } = session;
+    try {
+      if (CANCEL_KEYWORDS.includes(text)) {
+        clearSession(userId);
+        const booking = await getTrainingBookingByRow(rowIndex);
+        if (!booking) return [{ type: 'text', text: '時間変更をやめました。' }];
+        return [buildTrainingTimeCheckMessage(booking, customerUserId)];
+      }
+      const m = text.trim().match(/^(明日|明後日|あした|あさって|\d{1,2}[\/\-月]\d{1,2}日?)\s*(.+)$/);
+      const newDate = m && parseDate(m[1]);
+      const newTime = m && parseTime(m[2].trim());
+      if (!newDate || !newTime) {
+        return [{ type: 'text', text: '日時を読み取れませんでした。\n例: 10月23日 14:00\n（やめる場合は「キャンセル」と送信）' }];
+      }
+      clearSession(userId);
+      return await finalizeTrainingBooking(client, rowIndex, customerUserId, true, { date: newDate, time: newTime });
+    } catch (e) {
+      console.error('トレーニング時間変更エラー:', e.message);
       return [{ type: 'text', text: '⚠️ 確定処理中にエラーが発生しました。' }];
     }
   }

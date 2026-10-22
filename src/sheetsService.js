@@ -704,14 +704,14 @@ async function saveTrainingBooking({ date, time, menu, duration, name, userId, g
   return { endTime, rowIndex };
 }
 
-/** トレーニング予約確定時にL列へジム名を記録 */
-async function updateTrainingGym(rowIndex, gymName) {
+/** トレーニング予約の日時（A:開始日 B:開始 C:終了）を更新 */
+async function updateTrainingBookingTime(rowIndex, date, time, endTime) {
   const sheets = await getSheets();
   await sheets.spreadsheets.values.update({
     spreadsheetId: config.SPREADSHEET_ID,
-    range: `${config.TRAINING_SHEET_NAME}!L${rowIndex}`,
+    range: `${config.TRAINING_SHEET_NAME}!A${rowIndex}:C${rowIndex}`,
     valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [[gymName]] },
+    requestBody: { values: [[date, time, endTime]] },
   });
 }
 
@@ -883,7 +883,7 @@ async function getMonthlySalesReport(yearMonth) {
 module.exports = {
   getAvailableSlots, saveBooking, saveBookingIfAvailable, ensureHeaders,
   getUserReservations, cancelBooking, deleteCancelledRows, backfillPrices, ensureGoalSheet,
-  saveTrainingBooking, updateTrainingBookingStatus, updateTrainingGym, createTrainingCalendarEvent,
+  saveTrainingBooking, updateTrainingBookingStatus, updateTrainingBookingTime, createTrainingCalendarEvent,
   getTrainingBookingByRow, getUserTrainingReservations, getMonthlySalesReport,
   getDaySettings,
 };
