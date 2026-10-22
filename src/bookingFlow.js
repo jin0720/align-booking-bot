@@ -886,7 +886,8 @@ async function handleBookingFlow(userId, text, client) {
 
   // ── 予約アプリ(LIFF)が予約完了時に自動送信するメッセージ ───────
   // チャット履歴を残すためだけの送信なので返信しない（確認メッセージは別途 push 済み）
-  if (text.startsWith('【予約完了】')) return [];
+  // （英語表示のミニアプリは「✅ Booking complete」で始まる文面を送る）
+  if (text.startsWith('【予約完了】') || text.startsWith('✅ Booking complete')) return [];
 
   // ── オーナー操作: お客様へ返信（宛先選択） ────────────────────
   if (text.startsWith(OWNER_REPLY_PREFIX)) {
