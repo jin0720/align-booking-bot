@@ -3,6 +3,7 @@
 // 各ユーザーの会話状態をメモリ上で管理する
 
 const config = require('./config');
+const { getUserLang, t } = require('./i18n');
 const { OWNER_REPLY_PREFIX } = require('./contactButtons');
 const { getAvailableSlots, saveBooking, saveBookingIfAvailable, getUserReservations, cancelBooking, updateTrainingBookingStatus, updateTrainingGym, createTrainingCalendarEvent, getTrainingBookingByRow } = require('./sheetsService');
 const {
@@ -31,13 +32,19 @@ function clearSession(userId) {
 // キーワード定義
 // ────────────────────────────────────────────────────────────────
 const TRIGGER_KEYWORDS = ['マッサージ予約', 'マッサージ予約（自動）', 'マッサージ予約(自動)'];
-const CANCEL_KEYWORDS = ['キャンセル', 'やめる', 'やめ', 'cancel', '最初から', 'やり直し', 'リセット'];
+const CANCEL_KEYWORDS = ['キャンセル', 'やめる', 'やめ', 'cancel', '最初から', 'やり直し', 'リセット', 'reset', 'start over'];
 const LIST_RESERVATIONS_KEYWORDS = ['予約表示', '予約確認', '予約一覧', '予約の確認・変更・キャンセル', '予約の確認・変更', '変更・キャンセル'];
 const CANCEL_RESERVATION_KEYWORDS = ['予約キャンセル', '予約のキャンセル', 'キャンセルしたい'];
 const TRAINING_KEYWORDS = ['トレーニングお問い合わせ', 'トレーニング予約', 'パーソナルトレーニング', 'トレーニング相談・体験予約', 'トレーニング相談', 'トレーニング'];
 
+// 英語入力は誤爆を避けるため完全一致のみ受け付ける
+const EN_TRIGGER = new Set(['book', 'booking', 'book a massage', 'massage booking', 'reserve', 'reservation']);
+const EN_LIST = new Set(['my bookings', 'my reservations', 'check booking', 'check reservation', 'view booking', 'view reservations', 'cancel booking', 'cancel reservation', 'change or cancel']);
+const EN_TRAINING = new Set(['training', 'personal training', 'training consultation', 'training inquiry']);
+const enText = (text) => text.trim().toLowerCase();
+
 function isTriggered(text) {
-  return TRIGGER_KEYWORDS.some(k => text === k);
+  return TRIGGER_KEYWORDS.some(k => text === k) || EN_TRIGGER.has(enText(text));
 }
 function isCancelled(text) {
   if (text.startsWith('キャンセル実行:')) return false;
@@ -46,7 +53,10 @@ function isCancelled(text) {
   return CANCEL_KEYWORDS.some(k => text.toLowerCase().includes(k));
 }
 function isReservationCancelTriggered(text) {
-  return CANCEL_RESERVATION_KEYWORDS.some(k => text.includes(k));
+  return CANCEL_RESERVATION_KEYWORDS.some(k => text.includes(k)) || EN_LIST.has(enText(text));
+}
+function isTrainingTriggered(text) {
+  return TRAINING_KEYWORDS.some(k => text.includes(k)) || EN_TRAINING.has(enText(text));
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -54,10 +64,11 @@ function isReservationCancelTriggered(text) {
 // ────────────────────────────────────────────────────────────────
 
 /** マッサージ予約 → LIFF誘導カード */
-function buildMassageLiffCard(greeting) {
+function buildMassageLiffCard(lang) {
+  const T = t(lang);
   return {
     type: 'flex',
-    altText: 'マッサージのご予約',
+    altText: T.liffCard.altText,
     contents: {
       type: 'bubble',
       header: {
@@ -66,7 +77,7 @@ function buildMassageLiffCard(greeting) {
         backgroundColor: '#8C7A6B',
         contents: [{
           type: 'text',
-          text: 'マッサージのご予約',
+          text: T.liffCard.header,
           color: '#ffffff',
           weight: 'bold',
           size: 'md',
@@ -82,7 +93,7 @@ function buildMassageLiffCard(greeting) {
         contents: [
           {
             type: 'text',
-            text: '※「予約する」をタップすると当店公式の予約フォームが開きます（初回のみ許可が必要です）。LINEのお名前を自動入力するため、プロフィール情報へのアクセス許可をお願いします。',
+            text: T.liffCard.note,
             size: 'xxs',
             wrap: true,
             color: '#aaaaaa',
@@ -96,8 +107,8 @@ function buildMassageLiffCard(greeting) {
           type: 'button',
           action: {
             type: 'uri',
-            label: '予約する',
-            uri: 'https://liff.line.me/2009962690-j5dQBfYL',
+            label: T.liffCard.button,
+            uri: T.liffUrl(''),
           },
           style: 'primary',
           color: '#8C7A6B',
@@ -709,13 +720,29 @@ const TRAINING_GOAL_OPTIONS = [
   '運動不足を解消したい',
 ];
 
+/** 目標の表示名（英語では翻訳、自由入力などの未登録の文はそのまま） */
+function goalLabel(T, goal) {
+  return (T.goalLabels && T.goalLabels[goal]) || goal;
+}
+
+/**
+ * ボタンの動作。日本語は従来どおりユーザー発言として送る。
+ * 英語は日本語の内部コマンドがトークに出ないよう、postback + displayText で送る
+ */
+function chatAction(T, label, text) {
+  if (T.lang === 'ja') return { type: 'message', label, text };
+  return { type: 'postback', label, data: text, displayText: label };
+}
+
 /** 目標選択画面（Flex Message カード形式）を返す */
-function buildTrainingGoalMessages(selectedGoals, headerText) {
+function buildTrainingGoalMessages(selectedGoals, headerText, lang) {
+  const T = t(lang);
   const goalButtons = TRAINING_GOAL_OPTIONS.map(g => {
     const isSelected = selectedGoals.includes(g);
+    const display = goalLabel(T, g);
     return {
       type: 'button',
-      action: { type: 'message', label: isSelected ? `✓ ${g}` : g, text: `目標:${g}` },
+      action: chatAction(T, isSelected ? `✓ ${display}` : display, `目標:${g}`),
       style: isSelected ? 'primary' : 'secondary',
       color: isSelected ? '#2C5F3F' : undefined,
       margin: 'sm',
@@ -725,14 +752,14 @@ function buildTrainingGoalMessages(selectedGoals, headerText) {
   const footerContents = [
     {
       type: 'button',
-      action: { type: 'message', label: 'その他（自由入力）', text: '目標:その他' },
+      action: chatAction(T, T.goalOther, '目標:その他'),
       style: 'secondary',
     },
   ];
   if (selectedGoals.length > 0) {
     footerContents.push({
       type: 'button',
-      action: { type: 'message', label: '✅ 選択完了', text: '✅ 選択完了' },
+      action: chatAction(T, T.goalDone, '✅ 選択完了'),
       style: 'primary',
       color: '#2C5F3F',
     });
@@ -773,17 +800,18 @@ function buildTrainingGoalMessages(selectedGoals, headerText) {
 }
 
 /** 次アクション選択 Flex（予約 or 返信待ち）を返す */
-function buildTrainingNextActionMessage(userId, session) {
+function buildTrainingNextActionMessage(userId, session, lang) {
+  const T = t(lang);
   const goals = session.goals || [];
   const goalsText = goals.length > 0
-    ? goals.map(g => `・${g}`).join('\n')
-    : '目標は特になし';
+    ? goals.map(g => `・${goalLabel(T, g)}`).join('\n')
+    : T.noGoals;
 
   // goalsを保持したまま次のステップへ（training_wait_replyハンドラでgoalsを使うため）
   setSession(userId, { step: 'training_awaiting_action' });
   return [{
     type: 'flex',
-    altText: '目標が決まりました！次のステップを選んでください。',
+    altText: T.nextAction.altText,
     contents: {
       type: 'bubble',
       header: {
@@ -792,7 +820,7 @@ function buildTrainingNextActionMessage(userId, session) {
         backgroundColor: '#2C5F3F',
         contents: [{
           type: 'text',
-          text: '🎯 選択された目標',
+          text: T.nextAction.header,
           color: '#ffffff',
           weight: 'bold',
           size: 'md',
@@ -805,7 +833,7 @@ function buildTrainingNextActionMessage(userId, session) {
         contents: [
           { type: 'text', text: goalsText, size: 'sm', wrap: true },
           { type: 'separator', margin: 'md' },
-          { type: 'text', text: '次のステップを選んでください😊', size: 'sm', wrap: true, margin: 'md' },
+          { type: 'text', text: T.nextAction.prompt, size: 'sm', wrap: true, margin: 'md' },
         ],
       },
       footer: {
@@ -817,19 +845,15 @@ function buildTrainingNextActionMessage(userId, session) {
             type: 'button',
             action: {
               type: 'uri',
-              label: '今すぐ予約する',
-              uri: 'https://liff.line.me/2009962690-j5dQBfYL?menu=training',
+              label: T.nextAction.bookNow,
+              uri: T.liffUrl('menu=training'),
             },
             style: 'primary',
             color: '#2C5F3F',
           },
           {
             type: 'button',
-            action: {
-              type: 'message',
-              label: 'トレーナーからの返信を待つ',
-              text: 'training_wait_reply',
-            },
+            action: chatAction(T, T.nextAction.waitReply, 'training_wait_reply'),
             style: 'secondary',
           },
         ],
@@ -851,11 +875,13 @@ function buildTrainingNextActionMessage(userId, session) {
  */
 async function handleBookingFlow(userId, text, client) {
   const session = getSession(userId);
+  const lang = await getUserLang(client, userId);
+  const T = t(lang);
   console.log(`🔄 [${userId}] 現在のステップ: ${session.step}, 受信テキスト: "${text}"`);
 
   // ── IDチェック要求 (デバッグ用) ─────────────────────────────
   if (text.includes('自分のID') || text.includes('userid') || text === 'ID') {
-    return [{ type: 'text', text: `あなたのLINE User IDは：\n${userId}` }];
+    return [{ type: 'text', text: T.userIdText(userId) }];
   }
 
   // ── 予約アプリ(LIFF)が予約完了時に自動送信するメッセージ ───────
@@ -897,8 +923,7 @@ async function handleBookingFlow(userId, text, client) {
       const profile = await client.getProfile(userId);
       displayName = profile.displayName || '';
     } catch (e) {}
-    const greeting = displayName ? `${displayName}さん、` : '';
-    return [buildMassageLiffCard(greeting)];
+    return [buildMassageLiffCard(lang)];
   }
 
   // ── オーナー操作: トレーニング予約確定（ジム選択へ） ──────────────
@@ -980,11 +1005,14 @@ async function handleBookingFlow(userId, text, client) {
       await updateTrainingBookingStatus(rowIndex, '確定');
       await updateTrainingGym(rowIndex, gym.name);
       await createTrainingCalendarEvent(booking);
+      // お客様に届くメッセージは、お客様の言語で送る
+      const CT = t(await getUserLang(client, customerUserId));
+      const shownGym = (CT.gyms && CT.gyms[gymIdx]) || gym;
       await client.pushMessage({
         to: customerUserId,
         messages: [{
           type: 'flex',
-          altText: '✅ トレーニング予約が確定しました',
+          altText: CT.gymConfirm.altText,
           contents: {
             type: 'bubble',
             header: {
@@ -993,7 +1021,7 @@ async function handleBookingFlow(userId, text, client) {
               backgroundColor: '#2C5F3F',
               contents: [{
                 type: 'text',
-                text: '✅ トレーニング予約が確定しました',
+                text: CT.gymConfirm.header,
                 color: '#ffffff',
                 weight: 'bold',
                 size: 'md',
@@ -1005,18 +1033,18 @@ async function handleBookingFlow(userId, text, client) {
               layout: 'vertical',
               spacing: 'sm',
               contents: [
-                { type: 'text', text: `📅 ${formatDateJP(booking.date)}　${booking.time}〜${booking.endTime}`, size: 'sm', wrap: true },
-                { type: 'text', text: `⏱ パーソナルトレーニング ${booking.duration}分`, size: 'sm', wrap: true },
+                { type: 'text', text: `📅 ${CT.formatDate(booking.date)}　${booking.time}〜${booking.endTime}`, size: 'sm', wrap: true },
+                { type: 'text', text: CT.gymConfirm.session(booking.duration), size: 'sm', wrap: true },
                 { type: 'separator', margin: 'md' },
-                { type: 'text', text: '📍 ご利用ジム', size: 'xs', color: '#888888', margin: 'md', weight: 'bold' },
-                { type: 'text', text: gym.label, size: 'sm', color: '#2C5F3F', weight: 'bold', wrap: true },
-                { type: 'text', text: gym.name, size: 'sm', wrap: true },
-                { type: 'text', text: gym.address, size: 'xs', color: '#555555', wrap: true },
+                { type: 'text', text: CT.gymConfirm.gymTitle, size: 'xs', color: '#888888', margin: 'md', weight: 'bold' },
+                { type: 'text', text: shownGym.label, size: 'sm', color: '#2C5F3F', weight: 'bold', wrap: true },
+                { type: 'text', text: shownGym.name, size: 'sm', wrap: true },
+                { type: 'text', text: shownGym.address, size: 'xs', color: '#555555', wrap: true },
                 {
                   type: 'button',
                   action: {
                     type: 'uri',
-                    label: 'Googleマップで開く',
+                    label: CT.gymConfirm.mapButton,
                     uri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(gym.address)}`,
                   },
                   style: 'link',
@@ -1024,7 +1052,7 @@ async function handleBookingFlow(userId, text, client) {
                   margin: 'xs',
                 },
                 { type: 'separator', margin: 'sm' },
-                { type: 'text', text: '※ 動きやすい服装でお越しください😊', size: 'xs', color: '#888888', wrap: true },
+                { type: 'text', text: CT.gymConfirm.note, size: 'xs', color: '#888888', wrap: true },
               ],
             },
           },
@@ -1059,13 +1087,15 @@ async function handleBookingFlow(userId, text, client) {
   // ── オーナー操作: 代替時間のテキストを入力中 ────────────────────
   if (session.step === 'owner_propose_time') {
     const { customerUserId, bookingName } = session;
-    const liffUrl = 'https://liff.line.me/2009962690-j5dQBfYL?menu=training';
+    // お客様に届くメッセージは、お客様の言語で送る（本文はオーナーが入力した文面のまま）
+    const CT = t(await getUserLang(client, customerUserId));
+    const liffUrl = CT.liffUrl('menu=training');
     try {
       await client.pushMessage({
         to: customerUserId,
         messages: [{
           type: 'flex',
-          altText: '⏰ トレーナーより時間変更のご提案',
+          altText: CT.proposeTime.altText,
           contents: {
             type: 'bubble',
             header: {
@@ -1074,7 +1104,7 @@ async function handleBookingFlow(userId, text, client) {
               backgroundColor: '#8C7A6B',
               contents: [{
                 type: 'text',
-                text: '⏰ トレーナーより時間変更のご提案',
+                text: CT.proposeTime.header,
                 color: '#ffffff',
                 weight: 'bold',
                 size: 'md',
@@ -1088,7 +1118,7 @@ async function handleBookingFlow(userId, text, client) {
               contents: [
                 { type: 'text', text: text, size: 'sm', wrap: true },
                 { type: 'separator', margin: 'md' },
-                { type: 'text', text: '上記の日程でよろしければ下のボタンから再予約をお願いします😊', size: 'xs', color: '#888888', wrap: true, margin: 'md' },
+                { type: 'text', text: CT.proposeTime.footer, size: 'xs', color: '#888888', wrap: true, margin: 'md' },
               ],
             },
             footer: {
@@ -1096,7 +1126,7 @@ async function handleBookingFlow(userId, text, client) {
               layout: 'vertical',
               contents: [{
                 type: 'button',
-                action: { type: 'uri', label: '再予約する（ミニアプリ）', uri: liffUrl },
+                action: { type: 'uri', label: CT.proposeTime.button, uri: liffUrl },
                 style: 'primary',
                 color: '#2C5F3F',
               }],
@@ -1117,11 +1147,11 @@ async function handleBookingFlow(userId, text, client) {
     // 「その他」タップ
     if (text === '目標:その他') {
       setSession(userId, { step: 'training_goal_freetext' });
-      return [{ type: 'text', text: 'どのような目標か、チャットで教えてください😊' }];
+      return [{ type: 'text', text: T.goalFreetextPrompt }];
     }
     // 「選択完了」タップ
     if (text === '✅ 選択完了') {
-      return buildTrainingNextActionMessage(userId, session);
+      return buildTrainingNextActionMessage(userId, session, lang);
     }
     // 目標タップ
     if (text.startsWith('目標:')) {
@@ -1129,7 +1159,7 @@ async function handleBookingFlow(userId, text, client) {
       const goals = session.goals || [];
       if (!goals.includes(goal)) goals.push(goal);
       setSession(userId, { goals });
-      return buildTrainingGoalMessages(goals, `✓「${goal}」を選択しました！\n他の目標も選べます😊`);
+      return buildTrainingGoalMessages(goals, T.goalSelectedHeader(goalLabel(T, goal)), lang);
     }
     return [];
   }
@@ -1139,7 +1169,7 @@ async function handleBookingFlow(userId, text, client) {
     const goals = session.goals || [];
     goals.push(text);
     setSession(userId, { goals, step: 'training_goal_select' });
-    return buildTrainingGoalMessages(goals, `✓「${text}」を選択しました！\n他の目標も選べます😊`);
+    return buildTrainingGoalMessages(goals, T.goalSelectedHeader(text), lang);
   }
 
   // ── トレーニング: 返信待ち ────────────────────────────────────────
@@ -1158,7 +1188,7 @@ async function handleBookingFlow(userId, text, client) {
         to: ownerId,
         messages: [{
           type: 'text',
-          text: `💬 トレーニング相談が届きました！\n\n👤 ${displayName || userId}\n\n🎯 目標:\n${goalsText}\n\nLINEから直接返信してください。`,
+          text: `💬 トレーニング相談が届きました！\n\n👤 ${displayName || userId}\n${lang === 'en' ? '🌐 お客様の言語: English\n' : ''}\n🎯 目標:\n${goalsText}\n\nLINEから直接返信してください。`,
         }],
       }).catch(e => console.error('オーナー相談通知失敗:', e.message));
     }
@@ -1166,7 +1196,7 @@ async function handleBookingFlow(userId, text, client) {
     clearSession(userId);
     return [{
       type: 'text',
-      text: 'ご回答ありがとうございます！\nトレーナーより折り返しご連絡いたします。\n少々お待ちください😊',
+      text: T.waitReplyAck,
     }];
   }
 
@@ -1175,21 +1205,21 @@ async function handleBookingFlow(userId, text, client) {
   if (text === 'トレーニング相談スタート') {
     clearSession(userId);
     setSession(userId, { step: 'training_goal_select', goals: [] });
-    return buildTrainingGoalMessages([], 'あなたの目標を教えてください！\n複数選択できます😊');
+    return buildTrainingGoalMessages([], T.goalStartHeader, lang);
   }
 
   // ── トレーニング相談・体験予約 エントリーポイント ────────────────
-  if (TRAINING_KEYWORDS.some(k => text.includes(k))) {
+  if (isTrainingTriggered(text)) {
     let displayName = '';
     try {
       const profile = await client.getProfile(userId);
       displayName = profile.displayName || '';
     } catch (e) {}
-    const greeting = displayName ? `${displayName}さん、` : '';
+    const greeting = T.greetName(displayName);
 
     return [{
       type: 'flex',
-      altText: `${greeting}パーソナルトレーニングへようこそ！`,
+      altText: T.trainingEntry.altText(greeting),
       contents: {
         type: 'bubble',
         header: {
@@ -1198,7 +1228,7 @@ async function handleBookingFlow(userId, text, client) {
           backgroundColor: '#2C5F3F',
           contents: [{
             type: 'text',
-            text: `🏋️ ${greeting}パーソナルトレーニングへようこそ！`,
+            text: T.trainingEntry.header(greeting),
             color: '#ffffff',
             weight: 'bold',
             size: 'md',
@@ -1210,8 +1240,8 @@ async function handleBookingFlow(userId, text, client) {
           layout: 'vertical',
           spacing: 'sm',
           contents: [
-            { type: 'text', text: '完全個室のレンタルジムでマンツーマン指導✨', size: 'sm', wrap: true },
-            { type: 'text', text: 'どちらからご利用ですか？', size: 'sm', wrap: true, margin: 'md' },
+            { type: 'text', text: T.trainingEntry.body1, size: 'sm', wrap: true },
+            { type: 'text', text: T.trainingEntry.body2, size: 'sm', wrap: true, margin: 'md' },
           ],
         },
         footer: {
@@ -1223,8 +1253,8 @@ async function handleBookingFlow(userId, text, client) {
               type: 'button',
               action: {
                 type: 'uri',
-                label: '体験してみる 初回2,000円OFF',
-                uri: 'https://liff.line.me/2009962690-j5dQBfYL?menu=training&trial=true',
+                label: T.trainingEntry.trialButton,
+                uri: T.liffUrl('menu=training&trial=true'),
               },
               style: 'primary',
               color: '#2C5F3F',
@@ -1233,7 +1263,7 @@ async function handleBookingFlow(userId, text, client) {
               type: 'button',
               action: {
                 type: 'postback',
-                label: 'まずは相談する',
+                label: T.trainingEntry.consultButton,
                 data: 'training_start_consultation',
               },
               style: 'secondary',
@@ -1249,7 +1279,7 @@ async function handleBookingFlow(userId, text, client) {
     return [
       {
         type: 'flex',
-        altText: '予約の確認・変更・キャンセル',
+        altText: T.reservationCheck.altText,
         contents: {
           type: 'bubble',
           body: {
@@ -1257,8 +1287,8 @@ async function handleBookingFlow(userId, text, client) {
             layout: 'vertical',
             spacing: 'md',
             contents: [
-              { type: 'text', text: '📅 予約の確認・変更・キャンセル', weight: 'bold', size: 'md' },
-              { type: 'text', text: 'ミニアプリで予約一覧を確認できます。\n日時変更は一度キャンセル後、再度ご予約ください。', size: 'sm', color: '#666666', wrap: true, margin: 'md' },
+              { type: 'text', text: T.reservationCheck.title, weight: 'bold', size: 'md' },
+              { type: 'text', text: T.reservationCheck.body, size: 'sm', color: '#666666', wrap: true, margin: 'md' },
             ],
           },
           footer: {
@@ -1269,8 +1299,8 @@ async function handleBookingFlow(userId, text, client) {
                 type: 'button',
                 action: {
                   type: 'uri',
-                  label: '予約確認・キャンセルはこちら',
-                  uri: 'https://liff.line.me/2009962690-j5dQBfYL?view=history',
+                  label: T.reservationCheck.button,
+                  uri: T.liffUrl('view=history'),
                 },
                 style: 'primary',
                 color: '#557A64',
@@ -1287,7 +1317,7 @@ async function handleBookingFlow(userId, text, client) {
     clearSession(userId);
     return [{
       type: 'text',
-      text: '🔄 操作をリセットしました。\n\n「マッサージ予約」と送ると予約を再開できます。',
+      text: T.resetDone,
     }];
   }
 

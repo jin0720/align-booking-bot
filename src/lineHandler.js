@@ -1,5 +1,6 @@
 // src/lineHandler.js - LINE Webhookイベントのルーティング
 const { handleBookingFlow } = require('./bookingFlow');
+const { getUserLang, t } = require('./i18n');
 
 // ユーザーごとのメッセージ処理キュー（並行処理による競合を防ぐ）
 const userQueues = new Map();
@@ -26,6 +27,9 @@ const POSTBACK_TEXT_MAP = {
   'training_start_consultation':        'トレーニング相談スタート',
 };
 
+// 英語表示のボタンは postback で内部コマンドを送る。そのままテキストとして処理する
+const PASSTHROUGH_POSTBACK = /^(目標:|✅ 選択完了$|training_wait_reply$)/;
+
 /**
  * LINE Webhookイベント1件を処理する
  */
@@ -50,7 +54,10 @@ async function handleEvent(event, client) {
     } else {
       // その他のpostback: マッピング表で変換
       const mapped = POSTBACK_TEXT_MAP[data];
-      if (mapped) {
+      if (PASSTHROUGH_POSTBACK.test(data)) {
+        // 英語表示のボタンが送る内部コマンド（日本語のユーザー発言と同じ扱い）
+        text = data;
+      } else if (mapped) {
         text = mapped;
         console.log(`📲 [${userId}] postback → "${data}" → テキスト: "${text}"`);
       } else {
@@ -84,7 +91,7 @@ async function _processMessage(userId, text, replyToken, client) {
     messages = await handleBookingFlow(userId, text, client);
   } catch (err) {
     console.error(`❌ [${userId}] handleBookingFlow エラー:`, err.message);
-    messages = [{ type: 'text', text: '処理中にエラーが発生しました。しばらくしてから再度お試しください。' }];
+    messages = [{ type: 'text', text: t(await getUserLang(client, userId)).genericError }];
   }
 
   if (!messages || messages.length === 0) {

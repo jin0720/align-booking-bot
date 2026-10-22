@@ -15,40 +15,27 @@ const {
 const config = require('./config');
 const { withOwnerReplyButton, addOwnerReplyButtonToBubble } = require('./contactButtons');
 const { minutesToTime, timeToMinutes, formatDateJP } = require('./utils');
+const { getUserLang, normalizeLang, t } = require('./i18n');
 
 const router = express.Router();
 
 /** 予約確定通知メッセージ */
-function buildBookingConfirmMessage({ date, time, endTime, menu, duration, name }) {
-  const menuName = config.MENUS[menu] || menu;
+function buildBookingConfirmMessage({ date, time, endTime, menu, duration, name }, lang) {
+  const T = t(lang);
+  const menuName = T.menuNames[menu] || config.MENUS[menu] || menu;
   const price = config.getPrice(menu, parseInt(duration));
-  const dateJP = formatDateJP(date);
 
   return {
     type: 'text',
-    text: (
-      `🎉 ご予約が確定しました！\n\n` +
-      `【予約内容】\n` +
-      `📋 ${menuName}\n` +
-      `⏱ ${duration}分コース\n` +
-      (price ? `💴 ¥${price.discounted.toLocaleString()}\n` : '') +
-      `📅 ${dateJP}\n` +
-      `🕐 ${time}〜${endTime}\n` +
-      `👤 ${name} 様\n\n` +
-      `ご来店を心よりお待ちしております✨\n\n` +
-      `※サロンの最寄駅は東高円寺(1番出口)から徒歩3分になります。詳細は後ほどご連絡いたしますので少々お待ちください。\n\n` +
-      `【キャンセルについて】\n` +
-      `前日23時まで：無料\n` +
-      `それ以降（当日キャンセル）：全額\n\n` +
-      `※前日23時以降のキャンセルは全額を頂戴いたします。`
-    ),
+    text: T.bookingConfirm({ menuName, duration, price, dateText: T.formatDate(date), time, endTime, name }),
   };
 }
 
 /** 予約確定後の場所案内メッセージ＋画像2枚 */
 const IMAGE_BASE = 'https://align-booking-bot.onrender.com/static';
 
-function buildLocationMessages(name, time, date) {
+function buildLocationMessages(name, time, date, lang) {
+  const T = t(lang);
   // 日本時間 (UTC+9) でtoday/tomorrowを計算
   const nowJST = new Date(Date.now() + 9 * 60 * 60 * 1000);
   const todayStr = nowJST.toISOString().slice(0, 10);
@@ -57,23 +44,14 @@ function buildLocationMessages(name, time, date) {
   const tomorrowStr = tomorrowJST.toISOString().slice(0, 10);
 
   let dayLabel;
-  if (date === todayStr)         dayLabel = '本日';
-  else if (date === tomorrowStr) dayLabel = '明日';
+  if (date === todayStr)         dayLabel = T.location.today;
+  else if (date === tomorrowStr) dayLabel = T.location.tomorrow;
   else {
     const [, m, d] = date.split('-').map(Number);
-    dayLabel = `${m}月${d}日`;
+    dayLabel = T.location.otherDay(m, d);
   }
 
-  const text =
-    `${name}さん、ご予約ありがとうございます！\n\n` +
-    `【サロン場所】\nhttps://maps.app.goo.gl/PHNZoRidbwHHJmAA8?g_st=ipc\n\n` +
-    `2階に上がったA号室になります。\n` +
-    `${dayLabel}${time}ごろお待ちしてます😊\n\n` +
-    `※自転車でお越しの際は、ご連絡いただけますようお願いいたします。\n\n` +
-    `【ご来店・ご退店の際のお願い】\n` +
-    `ご来店・ご退店の際は、近隣へのご配慮のため、静かにご入退店いただけますと幸いです。\n` +
-    `ご入室後は、通常どおりお話しいただいて問題ございません。\n\n` +
-    `ご理解とご協力のほど、よろしくお願いいたします🙇`;
+  const text = T.location.text({ name, dayLabel, time });
 
   return [
     { type: 'text', text },
@@ -90,8 +68,13 @@ function buildLocationMessages(name, time, date) {
   ];
 }
 
+/** オーナー通知に添える、お客様の言語の行。英語のお客様のみ表示 (日本語のお客様は従来どおり) */
+function ownerLangLine(lang) {
+  return lang === 'en' ? '🌐 お客様の言語: English\n' : '';
+}
+
 /** オーナー向けキャンセル通知 */
-async function notifyOwnerCancellation(client, { date, time, endTime, menu, duration, name }) {
+async function notifyOwnerCancellation(client, { date, time, endTime, menu, duration, name, lang }) {
   const ownerId = config.OWNER_LINE_USER_ID;
   if (!ownerId || !client) return;
   const menuName = config.MENUS[menu] || menu || '';
@@ -104,6 +87,7 @@ async function notifyOwnerCancellation(client, { date, time, endTime, menu, dura
         text: (
           `❌ 予約がキャンセルされました。\n\n` +
           `👤 ${name} 様\n` +
+          ownerLangLine(lang) +
           (menuName ? `📋 ${menuName}\n` : '') +
           (duration ? `⏱ ${duration}分コース\n` : '') +
           `📅 ${dateJP}\n` +
@@ -119,7 +103,7 @@ async function notifyOwnerCancellation(client, { date, time, endTime, menu, dura
 }
 
 /** オーナー向け新規予約通知 */
-async function notifyOwner(client, { date, time, endTime, menu, duration, name, userId, comment }) {
+async function notifyOwner(client, { date, time, endTime, menu, duration, name, userId, comment, lang }) {
   const ownerId = config.OWNER_LINE_USER_ID;
   if (!ownerId || !client) return;
   const menuName = config.MENUS[menu] || menu;
@@ -136,9 +120,9 @@ async function notifyOwner(client, { date, time, endTime, menu, duration, name, 
     }
   }
 
-  const nameLine = lineDisplayName
+  const nameLine = (lineDisplayName
     ? `👤 ${name} 様\n💬 LINE名: ${lineDisplayName}\n`
-    : `👤 ${name} 様\n`;
+    : `👤 ${name} 様\n`) + ownerLangLine(lang);
 
   try {
     await client.pushMessage({
@@ -165,7 +149,7 @@ async function notifyOwner(client, { date, time, endTime, menu, duration, name, 
 }
 
 /** トレーニング仮予約オーナー通知 Flex */
-async function notifyOwnerTraining(client, { rowIndex, date, time, endTime, duration, name, userId, goals, comment }) {
+async function notifyOwnerTraining(client, { rowIndex, date, time, endTime, duration, name, userId, goals, comment, lang }) {
   const ownerId = config.OWNER_LINE_USER_ID;
   if (!ownerId || !client) return;
   const dateJP = formatDateJP(date);
@@ -200,6 +184,7 @@ async function notifyOwnerTraining(client, { rowIndex, date, time, endTime, dura
             spacing: 'sm',
             contents: [
               { type: 'text', text: `👤 ${name} 様`, size: 'sm', wrap: true },
+              ...(lang === 'en' ? [{ type: 'text', text: '🌐 お客様の言語: English', size: 'sm', wrap: true }] : []),
               { type: 'text', text: `📅 ${dateJP}　${time}〜${endTime}`, size: 'sm', wrap: true },
               { type: 'text', text: `⏱ パーソナルトレーニング ${duration}分`, size: 'sm', wrap: true },
               { type: 'separator', margin: 'md' },
@@ -257,17 +242,21 @@ function createApiRoutes(lineClient) {
    */
   router.get('/menus', (req, res) => {
     try {
+      const T = t(normalizeLang(req.query.lang));
+      const menuName = (id, fallback) => T.menuNames[id] || fallback;
+      const localize = (price) => (price && T.lang !== 'ja' ? { ...price, label: T.duration(price.label.replace(/\D/g, '')) } : price);
+      const localizePrices = (prices) => Object.fromEntries(Object.entries(prices).map(([k, v]) => [k, localize(v)]));
       const massageMenus = Object.entries(config.MENUS).map(([key, value]) => {
         const priceTable = config.FIRST_TIME_MENU_IDS.has(key) ? config.FIRST_TIME_PRICES : config.PRICES;
         return {
           id: key,
-          name: value,
-          prices: {
+          name: menuName(key, value),
+          prices: localizePrices({
             70:  priceTable[70],
             100: priceTable[100],
             130: priceTable[130],
             160: priceTable[160],
-          },
+          }),
         };
       });
       const trainingMenus = Object.entries(config.TRAINING_MENUS).map(([key, value]) => {
@@ -275,7 +264,7 @@ function createApiRoutes(lineClient) {
         const durations = config.TRAINING_MENU_DURATIONS?.[key] || Object.keys(priceTable).map(Number);
         const prices = {};
         durations.forEach(d => { prices[d] = priceTable[d]; });
-        return { id: key, name: value, prices };
+        return { id: key, name: menuName(key, value), prices: localizePrices(prices) };
       });
       const menusById = new Map([...massageMenus, ...trainingMenus].map(m => [m.id, m]));
       const orderedMenus = config.MENU_DISPLAY_ORDER
@@ -284,7 +273,7 @@ function createApiRoutes(lineClient) {
       res.json(orderedMenus);
     } catch (error) {
       console.error('メニュー取得エラー:', error);
-      res.status(500).json({ error: 'メニュー取得に失敗しました' });
+      res.status(500).json({ error: t(normalizeLang(req.query.lang)).api.menusFailed });
     }
   });
 
@@ -295,19 +284,20 @@ function createApiRoutes(lineClient) {
   router.get('/availability', async (req, res) => {
     try {
       const { date, duration, menu = '' } = req.query;
+      const A = t(normalizeLang(req.query.lang)).api;
 
       if (!date || !duration) {
-        return res.status(400).json({ error: '日付 (date) と時間 (duration) が必須です' });
+        return res.status(400).json({ error: A.availabilityRequired });
       }
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        return res.status(400).json({ error: '日付形式が不正です (YYYY-MM-DD)' });
+        return res.status(400).json({ error: A.dateFormatInvalid });
       }
 
       const slots = await getAvailableSlots(date, parseInt(duration), menu);
       res.json({ date, duration, slots });
     } catch (error) {
       console.error('可用枠取得エラー:', error);
-      res.status(500).json({ error: '可用枠の取得に失敗しました' });
+      res.status(500).json({ error: t(normalizeLang(req.query.lang)).api.availabilityFailed });
     }
   });
 
@@ -319,12 +309,15 @@ function createApiRoutes(lineClient) {
   router.post('/bookings', async (req, res) => {
     try {
       const { date, time, menu, duration, name, userId, goals } = req.body;
+      // お客様の言語: ミニアプリで選ばれた lang があれば優先、なければ LINE の言語設定
+      const lang = await getUserLang(lineClient, userId, req.body.lang);
+      const T = t(lang);
       const rawComment = [req.body.comment, req.body.note, req.body.remarks, req.body.request, req.body.message]
         .find(v => typeof v === 'string' && v.trim());
       const comment = rawComment ? rawComment.trim().slice(0, 500) : '';
 
       if (!date || !time || !menu || !duration || !name || !userId) {
-        return res.status(400).json({ error: '必須フィールドが不足しています' });
+        return res.status(400).json({ error: T.api.fieldsMissing });
       }
 
       // ── トレーニング予約（仮予約フロー） ─────────────────────
@@ -338,7 +331,7 @@ function createApiRoutes(lineClient) {
         if (nowJST >= deadline) {
           return res.status(409).json({
             error: 'DEADLINE_PASSED',
-            message: `トレーニング予約は前日${config.TRAINING_BOOKING_DEADLINE_HOUR}時までにお申し込みください。`,
+            message: T.api.trainingDeadline(config.TRAINING_BOOKING_DEADLINE_HOUR),
           });
         }
 
@@ -353,26 +346,26 @@ function createApiRoutes(lineClient) {
             to: userId,
             messages: [{
               type: 'text',
-              text: (
-                `⏳ トレーニングの仮予約を受け付けました！\n\n` +
-                `📅 ${formatDateJP(date)}　${time}〜${endTime}\n` +
-                `⏱ パーソナルトレーニング ${duration}分\n\n` +
-                `トレーナーがレンタルジムの空きを確認後、前日${config.TRAINING_BOOKING_DEADLINE_HOUR}時までにLINEでご連絡します。\n\n` +
-                `確定後にジムの場所をお知らせします📍`
-              ),
+              text: T.trainingPending({
+                dateText: T.formatDate(date),
+                time,
+                endTime,
+                duration,
+                deadlineHour: config.TRAINING_BOOKING_DEADLINE_HOUR,
+              }),
             }],
           }).catch(err => console.error('トレーニング仮予約通知失敗:', err.message));
 
           // オーナーへ Flex 通知
           notifyOwnerTraining(lineClient, {
-            rowIndex, date, time, endTime, duration, name, userId, comment,
+            rowIndex, date, time, endTime, duration, name, userId, comment, lang,
             goals: Array.isArray(goals) ? goals : [],
           });
         }
 
         return res.status(201).json({
           success: true,
-          message: '仮予約を受け付けました',
+          message: T.api.trainingReceived,
           pending: true,
           booking: { date, time, endTime, menu, duration, name, rowIndex },
         });
@@ -386,7 +379,7 @@ function createApiRoutes(lineClient) {
         if (err.code === 'SLOT_TAKEN') {
           return res.status(409).json({
             error: 'SLOT_TAKEN',
-            message: err.message,
+            message: T.api.slotTaken || err.message,
             availableSlots: err.availableSlots,
           });
         }
@@ -400,7 +393,7 @@ function createApiRoutes(lineClient) {
         console.warn(`⚠️ LINE通知スキップ: userId が不正です ("${userId}") — LIFF未初期化の可能性あり`);
       } else {
         console.log(`📤 [${userId}] pushMessage 送信中...`);
-        const confirmMsg = buildBookingConfirmMessage({ date, time, endTime, menu, duration, name });
+        const confirmMsg = buildBookingConfirmMessage({ date, time, endTime, menu, duration, name }, lang);
         lineClient.pushMessage({ to: userId, messages: [confirmMsg] })
           .then(() => console.log(`✅ [${userId}] 予約確認メッセージ送信完了`))
           .catch(err => {
@@ -410,22 +403,22 @@ function createApiRoutes(lineClient) {
             if (legacyDetail) console.error('  LINE API エラー詳細:', JSON.stringify(legacyDetail));
           });
 
-        const locationMsgs = buildLocationMessages(name, time, date);
+        const locationMsgs = buildLocationMessages(name, time, date, lang);
         lineClient.pushMessage({ to: userId, messages: locationMsgs })
           .then(() => console.log(`✅ [${userId}] 場所案内メッセージ送信完了`))
           .catch(err => console.error(`❌ 場所案内送信失敗 [${userId}]:`, err.message));
 
-        notifyOwner(lineClient, { date, time, endTime, menu, duration, name, userId, comment });
+        notifyOwner(lineClient, { date, time, endTime, menu, duration, name, userId, comment, lang });
       }
 
       res.status(201).json({
         success: true,
-        message: '予約が確定しました',
+        message: T.api.bookingConfirmed,
         booking: { date, time, endTime, menu, duration, name },
       });
     } catch (error) {
       console.error('予約作成エラー:', error);
-      res.status(500).json({ error: '予約の作成に失敗しました' });
+      res.status(500).json({ error: t(normalizeLang(req.body && req.body.lang)).api.bookingFailed });
     }
   });
 
@@ -459,7 +452,7 @@ function createApiRoutes(lineClient) {
       res.json({ userId, bookings });
     } catch (error) {
       console.error('予約履歴取得エラー:', error);
-      res.status(500).json({ error: '予約履歴の取得に失敗しました' });
+      res.status(500).json({ error: t(normalizeLang(req.query.lang)).api.historyFailed });
     }
   });
 
@@ -470,26 +463,28 @@ function createApiRoutes(lineClient) {
     try {
       const { rowIndex } = req.params;
       const { date, time, endTime, menu, duration, name } = req.body;
+      const lang = normalizeLang(req.body.lang) || 'ja';
+      const A = t(lang).api;
 
       if (!date || !time || !name) {
-        return res.status(400).json({ error: '日付、時間、名前が必須です' });
+        return res.status(400).json({ error: A.cancelFieldsMissing });
       }
 
       const [cy, cm, cd] = date.split('-').map(Number);
       const cancelDeadline = new Date(cy, cm - 1, cd - 1);
       cancelDeadline.setHours(23, 0, 0, 0);
       if (new Date() >= cancelDeadline) {
-        return res.status(400).json({ error: '前日23時を過ぎているため、キャンセルできません。' });
+        return res.status(400).json({ error: A.cancelDeadlinePassed });
       }
 
       await cancelBooking({ rowIndex: parseInt(rowIndex), date, time, name });
-      res.json({ success: true, message: '予約がキャンセルされました' });
+      res.json({ success: true, message: A.cancelled });
 
       // オーナーへキャンセル通知（レスポンス後に非同期で送信）
-      notifyOwnerCancellation(lineClient, { date, time, endTime, menu, duration, name }).catch(() => {});
+      notifyOwnerCancellation(lineClient, { date, time, endTime, menu, duration, name, lang }).catch(() => {});
     } catch (error) {
       console.error('予約キャンセルエラー:', error);
-      res.status(500).json({ error: '予約のキャンセルに失敗しました' });
+      res.status(500).json({ error: t(normalizeLang(req.body && req.body.lang)).api.cancelFailed });
     }
   });
 
