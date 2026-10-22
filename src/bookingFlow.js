@@ -345,7 +345,7 @@ function buildConfirmMessage(session) {
                   {
                     type: 'text',
                     text: price.original !== price.discounted
-                      ? `¥${price.original.toLocaleString()} → ¥${price.discounted.toLocaleString()}\n(オープン記念1,000円OFF)`
+                      ? `¥${price.original.toLocaleString()} → ¥${price.discounted.toLocaleString()}\n(${(price.original - price.discounted).toLocaleString()}円OFF)`
                       : `¥${price.discounted.toLocaleString()}`,
                     size: 'sm',
                     color: '#666666',

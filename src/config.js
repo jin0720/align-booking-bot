@@ -39,8 +39,8 @@ const BASE_FIRST_TIME_PRICES = {
 };
 
 const BASE_TRAINING_FIRST_PRICES = {
-  60: { original: 10000, discounted: 9000,  label: '60分' },
-  90: { original: 13000, discounted: 12000, label: '90分' },
+  60: { original: 10000, discounted: 8000,  label: '60分' },
+  90: { original: 13000, discounted: 11000, label: '90分' },
 };
 
 // ─── メニュー ───────────────────────────────────────────
@@ -55,7 +55,7 @@ const MENUS = {
 const TRAINING_MENUS = {
   training: 'パーソナルトレーニング',
   training_early: '早朝パーソナル(6時〜9時スタート)',
-  training_first: '初回パーソナルトレーニング(1000円OFF)',
+  training_first: '初回パーソナルトレーニング(2000円OFF)',
 };
 
 // ─── 初回限定メニューID一覧（FIRST_TIME_PRICES系を使うID） ──
