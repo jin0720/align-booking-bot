@@ -111,7 +111,7 @@ module.exports = {
   MENU_DISPLAY_ORDER: ['oil', 'seitai', 'training', 'training_early', 'oil_first', 'seitai_first', 'training_first'],
 
   // ─── 営業時間 ────────────────────────────────────────────
-  BUSINESS_START:          10 * 60,  // 10:00 (分換算) ── マッサージ
+  BUSINESS_START:           9 * 60,  //  9:00 (分換算) ── マッサージ
   TRAINING_BUSINESS_START:  6 * 60,  //  6:00 (分換算) ── トレーニング
   BUSINESS_END:            23 * 60,  // 23:00 (閉店時刻 = 施術終了の上限)
   SLOT_INTERVAL:           30,        // 30分刻み
