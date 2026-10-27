@@ -547,10 +547,12 @@ async function backfillPrices() {
       if (!row) continue;
       const duration = parseInt(row[4]);
       const price = row[9];
-      if ((price == null || price === '') && config.PRICES[duration]?.discounted != null) {
+      // 料金が空なのは過去の予約のみ。切替日以降に起動しても新料金を遡及しないよう、切替直前の料金を使う
+      const legacyPrice = config.getPrice('oil', duration, new Date(config.PRICE_CHANGE_AT.getTime() - 1));
+      if ((price == null || price === '') && legacyPrice?.discounted != null) {
         updates.push({
           range: `${config.SHEET_NAME}!J${i + 1}`,
-          values: [[config.PRICES[duration].discounted]],
+          values: [[legacyPrice.discounted]],
         });
       }
     }
