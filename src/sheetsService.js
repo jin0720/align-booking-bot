@@ -226,7 +226,8 @@ async function getDaySettings(dateStr) {
       businessEnd:       (() => {
         const val = parseSettingTime(src[2]);
         if (val === null) return DEFAULTS.businessEnd;
-        if (val === 0) return 24 * 60; // Sheetsが "0:00:00" で返す深夜0時 → 24:00(1440分)として扱う
+        // 深夜帯の終了時刻(0:00→24:00、0:10→24:10)は翌日扱いで1440分以降に換算
+        if (val < 6 * 60) return val + 24 * 60;
         return val;
       })(),
       lastStartOverride: parseSettingTime(src[3] || '') ?? null,
@@ -273,7 +274,10 @@ async function getAvailableSlots(dateStr, duration, menu = '') {
 
   let lastStart;
   if (lastStartOverride !== null) {
-    lastStart = lastStartOverride;
+    // 最終スタートは「受付の基本締切」。ただし長いコース(100分/70分など)は
+    // 営業終了に収まる最終枠(22:30/23:00など)まで受付する。上限は締切+60分。
+    const endBasedLast = Math.ceil((businessEnd - duration) / SLOT_INTERVAL) * SLOT_INTERVAL;
+    lastStart = Math.max(lastStartOverride, Math.min(endBasedLast, lastStartOverride + 60));
   } else {
     const rawLastStart = businessEnd - duration;
     lastStart = Math.ceil(rawLastStart / SLOT_INTERVAL) * SLOT_INTERVAL;
