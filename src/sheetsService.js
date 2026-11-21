@@ -193,14 +193,14 @@ async function getDaySettings(dateStr) {
   const DEFAULTS = {
     businessStart:     config.BUSINESS_START,
     businessEnd:       config.BUSINESS_END,
-    lastStartOverride: null,
+    bookingCutoff:     22 * 60, // 当日予約の受付締切(分換算)
     leadTime:          60,
   };
   try {
     const sheets = await getSheets();
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: config.SPREADSHEET_ID,
-      range: `${config.SETTINGS_SHEET_NAME}!A:E`,
+      range: `${config.SETTINGS_SHEET_NAME}!A:F`,
     });
     const rows = (res.data.values || []).slice(1);
 
@@ -218,6 +218,10 @@ async function getDaySettings(dateStr) {
       if (key === 'デフォルト' || key === 'default' || key === '') defaultRow = row;
     }
 
+    // 受付締切(F列): 日付指定行 → デフォルト行 → 22:00 の順で採用
+    const cutoffOf = (row) => (row ? parseSettingTime(row[5] || '') : null);
+    const bookingCutoff = cutoffOf(dateRow) ?? cutoffOf(defaultRow) ?? DEFAULTS.bookingCutoff;
+
     const src = dateRow || defaultRow;
     if (!src) return DEFAULTS;
 
@@ -230,7 +234,7 @@ async function getDaySettings(dateStr) {
         if (val < 6 * 60) return val + 24 * 60;
         return val;
       })(),
-      lastStartOverride: parseSettingTime(src[3] || '') ?? null,
+      bookingCutoff,
       leadTime:          parseInt(src[4]) || DEFAULTS.leadTime,
     };
   } catch (err) {
@@ -241,7 +245,7 @@ async function getDaySettings(dateStr) {
 
 /** 空き時間を取得 */
 async function getAvailableSlots(dateStr, duration, menu = '') {
-  let { businessStart, businessEnd, lastStartOverride, leadTime } = await getDaySettings(dateStr);
+  let { businessStart, businessEnd, bookingCutoff, leadTime } = await getDaySettings(dateStr);
   if (config.TRAINING_MENUS && config.TRAINING_MENUS[menu]) {
     businessStart = Math.min(businessStart, config.TRAINING_BUSINESS_START);
   }
@@ -272,16 +276,17 @@ async function getAvailableSlots(dateStr, duration, menu = '') {
   const todayStr = `${y}-${m}-${d}`;
   const nowMinutes = (dateStr === todayStr) ? (hh * 60 + mm + leadTime) : 0;
 
-  let lastStart;
-  if (lastStartOverride !== null) {
-    // 最終スタートは「受付の基本締切」。ただし長いコース(100分/70分など)は
-    // 営業終了に収まる最終枠(22:30/23:00など)まで受付する。上限は締切+60分。
-    const endBasedLast = Math.ceil((businessEnd - duration) / SLOT_INTERVAL) * SLOT_INTERVAL;
-    lastStart = Math.max(lastStartOverride, Math.min(endBasedLast, lastStartOverride + 60));
-  } else {
-    const rawLastStart = businessEnd - duration;
-    lastStart = Math.ceil(rawLastStart / SLOT_INTERVAL) * SLOT_INTERVAL;
+  // 受付締切: 当日の予約は締切時刻を過ぎたら受け付けない(施術開始時刻の制限ではない)
+  // トレーニングは別途「前日締切」があるため対象外
+  const isTraining = !!(config.TRAINING_MENUS && config.TRAINING_MENUS[menu]);
+  if (!isTraining && dateStr === todayStr && (hh * 60 + mm) > bookingCutoff) {
+    console.log(`📊 [getAvailableSlots] 受付締切(${minutesToTime(bookingCutoff)})を過ぎたため0件 (${dateStr})`);
+    return [];
   }
+
+  // 施術開始の上限は営業終了に収まる最終枠(最終スタート列は使用しない)
+  const rawLastStart = businessEnd - duration;
+  let lastStart = Math.ceil(rawLastStart / SLOT_INTERVAL) * SLOT_INTERVAL;
   if (config.TRAINING_MENU_LAST_START && config.TRAINING_MENU_LAST_START[menu] != null) {
     lastStart = Math.min(lastStart, config.TRAINING_MENU_LAST_START[menu]);
   }
